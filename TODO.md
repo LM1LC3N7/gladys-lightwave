@@ -70,6 +70,15 @@ up to date at the end of every milestone.
       `gladys_version: ">=5.3.0"`, and `poll_frequency` if the sibling modules
       take it.
 
+- [ ] **Next patch — review r3 leftovers** (2026-10-26): after a new API
+      token string is pasted, before the first read, the protective "off"
+      checks the account with one `GET /v1/structures`: when Lightwave itself
+      answers that GET with a 429, the "off" is not sent and Gladys gets the
+      inexact reason "not read yet" (send it anyway when the 429 comes from
+      that check, the account being unchanged until proven otherwise); with a
+      slow token endpoint and a slow GET (3 s each) Gladys gets the answer at
+      6.1 s, past its 5 s wait (the write still goes out afterwards).
+
 ## Decisions
 
 - **Version 0.1.0 set by hand** (package.json, package-lock.json, manifest,
