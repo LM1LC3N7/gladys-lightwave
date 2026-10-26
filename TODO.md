@@ -42,6 +42,11 @@ up to date at the end of every milestone.
       accepted once by the API renewed on a 401; heating ids in /data bound
       to the account, never wiped by an empty answer; reads rotate beyond
       1 500 features.
+- [x] **Milestone 1 fixes — review r3** (2026-10-26, approved): kept ids
+      with another API token checked by one read of the structures before
+      an "off" (same account: sent at once, the table rebound); a device
+      skipped by the rotation keeps its badge while fresh; `accepted` set
+      only on the session that answered.
 - [ ] **Milestone 2 — real account**: run against a real account (see "To
       check on a real account"), turn the answers (anonymized) into fixtures,
       fix what differs.

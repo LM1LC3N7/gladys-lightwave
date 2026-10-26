@@ -36,6 +36,9 @@ the notes of the version's GitHub Release.
   is kept like one met by a read (review r2); a bearer token the API has
   accepted once is renewed on a 401; heating ids bound to the account and
   never wiped by an empty answer; beyond 1 500 features the reads rotate.
+- After new tokens, the heating ids are checked against the homes of the
+  account (a new token of the same account turns off at once); a device
+  skipped by the rotation keeps its badge (review r3).
 - Commands serialized per device within Gladys' 5 s and read again after;
   401/403/429/5xx handling with persisted stops and pauses; badges; the
   "Test the connection" button; docs en/fr; cover.

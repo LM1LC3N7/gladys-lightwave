@@ -188,7 +188,7 @@ export class LightwaveClient {
       });
     };
     const token = await this.ensureToken({ allowRefresh, timeout: rest.timeout });
-    const used = this.session;
+    let used = this.session;
     let answer = await send(token);
     let error = apiError(answer, { now: this.now() });
     if (error?.kind === 'unauthorized') {
@@ -200,7 +200,9 @@ export class LightwaveClient {
           // Only the token this call used is dropped: a token renewed meanwhile stays.
           this.session = null;
         }
-        answer = await send(await this.ensureToken({ timeout: rest.timeout }));
+        const renewed = await this.ensureToken({ timeout: rest.timeout });
+        used = this.session;
+        answer = await send(renewed);
         error = apiError(answer, { now: this.now() });
         if (error?.kind === 'unauthorized') {
           throw refusedByApi();
@@ -212,9 +214,10 @@ export class LightwaveClient {
     }
     // The API took this bearer token once: a later 401 is a revocation (one
     // renewal), never an account without access.
-    const ok = this.session === used ? used : this.session;
-    if (ok) {
-      ok.accepted = true;
+    // Only the session whose token this answer took: never one renewed by
+    // another call meanwhile.
+    if (used) {
+      used.accepted = true;
     }
     return parseJson(answer.body);
   }

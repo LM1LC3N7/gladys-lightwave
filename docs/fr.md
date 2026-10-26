@@ -71,6 +71,10 @@ Elles peuvent quand même échouer, et Gladys en affiche alors la cause :
   (il est redemandé une fois par minute au plus) ;
 - l'appareil n'a jamais été lu par cette intégration (aucun identifiant
   gardé) ;
+- après de nouveaux jetons, avant la première lecture : l'appareil n'est pas
+  dans les maisons du compte configuré maintenant (une lecture de la liste
+  des maisons le vérifie ; un nouveau jeton du même compte fonctionne
+  aussitôt) ;
 - le point de jeton ou l'API ne répond pas, ou refuse (401 sur un jeton tout
   juste émis, 403, 404, 429 sur l'écriture elle-même) ;
 - la commande n'a pas pu partir en 4,3 secondes (« pas encore envoyée » :
@@ -195,8 +199,9 @@ conteneur) : un sel aléatoire, la fin d'une pause, l'heure de la dernière
 tentative de lecture, un arrêt sur jetons refusés lié à une empreinte salée
 des deux jetons, et les identifiants Lightwave des fonctionnalités de mode et
 de consigne des appareils de chauffage du compte (pour les couper après un
-redémarrage ; jamais utilisés avec un autre compte, gardés tant que
-l'appareil est dans Gladys). Jamais un jeton : le jeton porteur vit en mémoire, le jeton de
+redémarrage ; jamais utilisés avec un autre compte (vérifié sur les maisons
+du compte quand les jetons changent), gardés tant que l'appareil est dans
+Gladys). Jamais un jeton : le jeton porteur vit en mémoire, le jeton de
 rafraîchissement dans la configuration de Gladys. Les identifiants Lightwave
 des appareils et des fonctionnalités sont les identifiants des appareils
 Gladys. Rien n'est envoyé ailleurs qu'à Lightwave.

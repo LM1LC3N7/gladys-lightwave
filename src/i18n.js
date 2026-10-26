@@ -174,6 +174,10 @@ export const ERRORS = {
     'Not sent yet (a bearer token is being obtained): it leaves as soon as possible. Check the device.',
     "Pas encore envoyée (un jeton porteur est en cours d'obtention) : elle part dès que possible. Vérifiez l'appareil.",
   ),
+  otherAccount: both(
+    'Not sent: this device is not in the homes of the Lightwave account configured now (another account?). Run a Scan.',
+    "Non envoyée : cet appareil n'est pas dans les maisons du compte Lightwave configuré maintenant (un autre compte ?). Lancez un Scan.",
+  ),
   tokenEndpointWait: both(
     'Not sent: the Lightwave token endpoint answered unexpectedly less than a minute ago; try again in a minute (see the status).',
     "Non envoyée : le point de jeton de Lightwave a répondu de façon inattendue il y a moins d'une minute ; réessayez dans une minute (voir le statut).",

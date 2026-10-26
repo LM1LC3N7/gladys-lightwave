@@ -64,6 +64,9 @@ They can still fail, and Gladys then shows the cause:
 - the token endpoint answered unexpectedly less than a minute ago (it is
   asked again once a minute at most);
 - the device was never read by this integration (no identifier kept);
+- after new tokens, before the first read: the device is not in the homes of
+  the account now configured (one read of the list of homes checks it; a new
+  token of the same account works at once);
 - the token endpoint or the API does not answer, or refuses (401 on a token
   just issued, 403, 404, 429 on the write itself);
 - the command could not leave within 4.3 seconds ("not sent yet": it leaves
@@ -177,7 +180,8 @@ container only): a random salt, the end of a pause, the time of the last read
 attempt, a stop on refused tokens tied to a salted fingerprint of the two
 tokens, and the Lightwave identifiers of the mode and target features of the
 heating devices of the account (to turn them off after a restart; never
-used with another account, kept while the device is in Gladys). Never a token: the bearer
+used with another account (checked against the homes of the account when
+the tokens change), kept while the device is in Gladys). Never a token: the bearer
 token lives in memory, the refresh token in the Gladys configuration. The
 device and feature ids of Lightwave are the identifiers of the Gladys
 devices. Nothing is sent anywhere but to Lightwave.

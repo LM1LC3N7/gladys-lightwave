@@ -716,24 +716,29 @@ export class LightwaveApp {
     const all = featureIdsOf(new Map(fresh), READ_TYPES);
     const limit = LIMITS.featuresPerRead * LIMITS.readBatches;
     let ids = all;
+    /** The sets left for a later cycle by the rotation (not a failure). */
+    const skipped = new Set();
     if (all.length > limit) {
       const start = this.readCursor % fresh.length;
-      const turned = new Map([...fresh.slice(start), ...fresh.slice(0, start)]);
-      ids = featureIdsOf(turned, READ_TYPES);
-      let count = 0;
+      const turned = [...fresh.slice(start), ...fresh.slice(0, start)];
+      const chosen = new Map();
       let used = 0;
-      for (const set of turned.values()) {
-        used += featureIdsOf(new Map([[set.id, set]]), READ_TYPES).length;
-        if (used > limit) {
-          break;
+      for (const [id, set] of turned) {
+        used += featureIdsOf(new Map([[id, set]]), READ_TYPES).length;
+        if (used > limit && chosen.size > 0) {
+          skipped.add(id);
+          continue;
         }
-        count += 1;
+        chosen.set(id, set);
       }
-      this.readCursor = start + Math.max(1, count);
+      ids = featureIdsOf(chosen, READ_TYPES);
+      this.readCursor = start + chosen.size;
     }
-    return ids.length === 0
-      ? { values: new Map(), failed: new Set() }
-      : this.client.readFeatures(ids);
+    const read =
+      ids.length === 0
+        ? { values: new Map(), failed: new Set() }
+        : await this.client.readFeatures(ids);
+    return { ...read, skipped };
   }
 
   /** Whether a feature of the set was in a request that failed (or beyond the cap). */
@@ -741,13 +746,22 @@ export class LightwaveApp {
     return Object.values(set.features).some((id) => failed.has(id));
   }
 
-  async apply(sets, { values, failed }) {
+  async apply(sets, { values, failed, skipped = new Set() }) {
     const mono = this.monotonic();
     this.sets = sets;
     this.unread = new Set();
     const read = [];
+    const maxAge = this.maxAge();
     for (const set of sets.values()) {
       if (this.stale.has(set.id)) {
+        continue;
+      }
+      if (skipped.has(set.id)) {
+        // Left by the rotation: its badge stays while its last read is fresh.
+        const at = this.readAt.get(set.id);
+        if (at === undefined || mono - at > maxAge) {
+          this.unread.add(set.id);
+        }
         continue;
       }
       if (this.missed(set, failed)) {
@@ -798,15 +812,42 @@ export class LightwaveApp {
   /** The protective writers of the heating sets kept in /data. */
   buildProtective() {
     this.protective = new Map();
-    if (this.memory.protectAccount !== this.config.account) {
-      // The ids of another account are never used with this one.
-      return;
-    }
+    // Kept with another API token: maybe the same account with a new token,
+    // maybe another account. Such an id is used only once the structure of
+    // its device is seen in the structures of the current account.
+    const unverified = this.memory.protectAccount !== this.config.account;
     for (const [setId, features] of Object.entries(this.memory.protect ?? {})) {
+      if (unverified && !features.structure) {
+        continue;
+      }
       const ids = deviceIds(this.gladys, setId);
       for (const spec of protectiveSpecs(features, this.config.language)) {
-        this.protective.set(ids.feature(spec.key), { setId, spec, features });
+        this.protective.set(ids.feature(spec.key), { setId, spec, features, unverified });
       }
+    }
+  }
+
+  /**
+   * The ids kept with another API token, checked by one read of the
+   * structures of this account (within the budget of the command): the
+   * structure of the device is there, the table is this account's; it is
+   * not, the device belongs to another account.
+   */
+  async verifyProtective(writer) {
+    let structures;
+    try {
+      structures = await this.client.structures({ timeout: TIMINGS.quickTimeout });
+    } catch (err) {
+      await this.tokenFailure(err);
+      throw this.error(err.kind === 'refused' ? ERRORS.tokensRefused : ERRORS.notReadYet);
+    }
+    if (!structures.includes(writer.features.structure)) {
+      throw this.error(ERRORS.otherAccount);
+    }
+    if (this.memory.protectAccount !== this.config.account) {
+      this.memory.protectAccount = this.config.account;
+      this.buildProtective();
+      await this.saveMemory();
     }
   }
 
@@ -833,6 +874,9 @@ export class LightwaveApp {
         }
       }
       if (Object.keys(kept).length > 0) {
+        if (set.structureId) {
+          kept.structure = set.structureId;
+        }
         protect[id] = kept;
       }
     }
@@ -1236,6 +1280,9 @@ export class LightwaveApp {
     ) {
       // The token endpoint answered unexpectedly a moment ago: once a minute at most.
       throw this.error(ERRORS.tokenEndpointWait);
+    }
+    if (writer.unverified && !this.sets.has(setId)) {
+      await this.verifyProtective(writer);
     }
     const set = this.sets.get(setId) ?? { id: setId, features };
     const payload = spec.write(number, this.values.get(setId) ?? {}, this.config);

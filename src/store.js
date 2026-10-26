@@ -119,6 +119,9 @@ export function normalizeProtect(raw) {
       }
     }
     if (Object.keys(kept).length > 0) {
+      if (validId(features.structure)) {
+        kept.structure = features.structure;
+      }
       out[setId] = kept;
     }
   }

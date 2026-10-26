@@ -401,6 +401,8 @@ test('r2-3: the heating ids of another account are never used', async () => {
   const s = await setup();
   s.server.apiToken = 'other-token';
   s.server.refreshTokens.add('other-refresh');
+  // Another account: other homes.
+  s.server.structures = { 'other-home': { devices: [] } };
   const again = await restart(s, 5 * SECOND, {
     api_token: 'other-token',
     refresh_token: 'other-refresh',
@@ -408,7 +410,7 @@ test('r2-3: the heating ids of another account are never used', async () => {
   });
   const writes = again.server.writes().length;
   const result = await command(again, SETS.boiler, 'mode', 0);
-  assert.match(result.error, /not been read yet since the start/);
+  assert.match(result.error, /not in the homes of the Lightwave account configured now/);
   assert.equal(again.server.writes().length, writes);
 });
 
@@ -441,4 +443,81 @@ test('r2-5: beyond 1 500 features, every device is read in turn', async () => {
   await s.wait(3 * MINUTE);
   assert.equal(s.app.readAt.size, 500, 'every valve read at least once');
   assert.ok(s.server.reads().length <= 40);
+});
+
+// --- Review r3 ---------------------------------------------------------------
+
+test('r3-1: a new API token of the same account: "off" goes out at once, even during a 429 pause', async () => {
+  const s = await setup({ config: { ...CONFIG, poll_interval: 300 } });
+  s.server.queue.push({
+    match: (r) => r.path === '/v1/features/read',
+    status: 429,
+    body: '',
+    headers: { 'retry-after': '3600' },
+  });
+  await s.wait(5 * MINUTE + SECOND);
+  s.server.apiToken = 'same-account-new-token';
+  s.server.refreshTokens.add('same-account-refresh');
+  const again = await restart(s, 10 * SECOND, {
+    api_token: 'same-account-new-token',
+    refresh_token: 'same-account-refresh',
+    refresh_token_state: undefined,
+  });
+  assert.deepEqual(await command(again, SETS.boiler, 'mode', 0), { success: true });
+  assert.equal(again.server.values[HEAT], 0);
+  assert.equal(
+    again.store.data.protectAccount,
+    again.app.config.account,
+    "the table is this account's now",
+  );
+  // Checked once: the next "off" needs no read of the structures.
+  const lists = again.server.of('/v1/structures').length;
+  assert.deepEqual(await command(again, SETS.trv, 'setpoint', 5), { success: true });
+  assert.equal(again.server.of('/v1/structures').length, lists);
+});
+
+test('r3-2: beyond 1 500 features, a device skipped by the rotation keeps its badge', async () => {
+  const server = fakeLightwave();
+  const featureSets = [];
+  for (let i = 0; i < 500; i += 1) {
+    const features = ['temperature', 'targetTemperature', 'valveLevel', 'batteryLevel'].map(
+      (type, k) => ({ featureId: `w-${i}-${k}`, type }),
+    );
+    for (const f of features) server.values[f.featureId] = 50;
+    featureSets.push({ featureSetId: `wv-${i}`, name: `Valve ${i}`, features });
+  }
+  server.structures = { big: { devices: [{ productCode: 'LW922', featureSets }] } };
+  const s = await setup({ server });
+  await s.wait(2 * MINUTE);
+  const before = s.gladys.fake.transports.length;
+  await s.wait(4 * MINUTE);
+  const flips = s.gladys.fake.transports.slice(before);
+  assert.equal(flips.length, 0, `${flips.length} badge changes in 4 cycles`);
+  assert.doesNotMatch(s.gladys.fake.connectionStatus.message.en, /not read this time/);
+});
+
+test('r3-3: "accepted" marks only the session that answered', async () => {
+  const server = fakeLightwave();
+  const { LightwaveClient } = await import('../src/client.js');
+  const { API_TOKEN, REFRESH_TOKEN } = await import('./fixtures/lightwave.js');
+  const client = new LightwaveClient({ transport: server.transport });
+  client.configure({ apiToken: API_TOKEN, refreshToken: REFRESH_TOKEN });
+  await client.refresh();
+  let release;
+  server.before = (r) =>
+    r.path === '/v1/structures'
+      ? new Promise((resolve) => {
+          release = resolve;
+        })
+      : undefined;
+  const first = client.structures();
+  await settle();
+  // Another call renews meanwhile.
+  client.session = null;
+  server.before = undefined;
+  await client.refresh();
+  const renewed = client.session;
+  release();
+  await first;
+  assert.notEqual(renewed.accepted, true, 'the new session has not been used yet');
 });
