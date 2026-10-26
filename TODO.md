@@ -84,8 +84,10 @@ up to date at the end of every milestone.
 - **Version 0.1.0 set by hand** (package.json, package-lock.json, manifest,
   `docker_image` tag) at milestone 1; the first release patch gives 0.1.1.
   Versions then belong to the Release workflow.
-- **SDK `^0.15.0`**, not the `^0.16.0` of the template: 0.16.0 was tagged but
-  not on npm on 2026-10-25. Migration planned (see above).
+- **SDK `^0.16.0`** (2026-10-26, migration wave 1): 0.16.0 is on npm since
+  2026-10-25 (a stale npm cache said otherwise); it adds the ai, tts and music
+  types; no effect here (`should_poll` explicit or `poll_frequency` unused). `keywords`, `countries` and `gladys_version >= 5.3.0` wait until
+  Gladys 5.3 is widespread.
 - **No `keywords` nor `countries`** in the manifest yet: they need
   `gladys_version >= 5.3.0`, released on 2026-10-25, which would block the
   installation on any instance not yet updated.

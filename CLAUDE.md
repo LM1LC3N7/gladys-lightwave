@@ -8,7 +8,7 @@ already taken and the next milestones.
 
 A Gladys Assistant **external integration** of type `device`: a Node.js
 service (Node 22+, ESM, no build step) in its own sandboxed Docker container,
-talking to Gladys through `@gladysassistant/integration-sdk` (v0.15), its only
+talking to Gladys through `@gladysassistant/integration-sdk` (v0.16), its only
 runtime dependency (HTTPS goes through `node:https`). It uses the **public API
 of Lightwave** (`publicapi.lightwaverf.com`) with the API token and the
 refresh token of the "API" page of my.lightwaverf.com, reads the hierarchy
