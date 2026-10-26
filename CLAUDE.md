@@ -61,17 +61,21 @@ scripts/cover.mjs   the cover, plain Node
   are built; the kind of a set comes from its Lightwave features.
 - Manifest keys (`api_token`, `refresh_token`, `poll_interval`,
   `allow_heating`, `max_setpoint`, `language`, the action `test_connection`)
-  and the internal keys `refresh_token_seed` / `refresh_token_current` are
-  frozen. Never a key prefixed `gladys_`.
+  and the internal key `refresh_token_state` are frozen. Never a key prefixed `gladys_`.
 - **Public API only**: never the sign-in of the Lightwave app (e-mail,
   password, app identifier header), never a User-Agent of an app.
 - **Tokens**: never in `/data`, the logs, a status or an error; the bearer
-  token in memory, the refresh tokens in the Gladys configuration. Never a
-  renewal from a command, at most one per cycle, never after a refusal.
+  token in memory, the refresh token in the Gladys configuration. Never a
+  renewal from a command that is not protective, at most one per cycle,
+  never after a refusal, never on a 401 of a token issued less than 10 min
+  ago.
 - **Heating**: the target temperature and mode "heating" behind
   `allow_heating` (off by default), the target bounded to 5 °C and
   `max_setpoint` (40 at most), the option read right before the send; mode
-  "off" is never held back by a pause, a backoff or the queue.
+  "off" and 5 °C are protective: not held back by the option, a pause, a
+  backoff or the queue, available before the first read after a restart
+  (ids in /data), checked by a read and sent again (3 at most). Docs list
+  exactly when they can fail; no "always" / "never" claims.
 - **Commands**: one at a time per device, refused before they are sent when
   they cannot be answered within Gladys' 5 s, sent once (never retried).
 - **Clock**: one read of the monotonic clock per decision (`dueAt(mono)`),

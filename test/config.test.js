@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { INTERNAL_KEYS, accountKey, currentRefreshToken, normalizeConfig } from '../src/config.js';
+import {
+  accountKey,
+  currentRefreshToken,
+  normalizeConfig,
+  readTokenState,
+  seedHash,
+  tokenState,
+} from '../src/config.js';
 
 test('the configuration normalized: trimmed tokens, bounded numbers, flags, known language', () => {
   const config = normalizeConfig({
@@ -40,16 +47,24 @@ test('the configuration normalized: trimmed tokens, bounded numbers, flags, know
   assert.equal(normalizeConfig({ language: 'de' }).language, 'fr');
 });
 
-test('the refresh token in use: the rotated one while the pasted one is its seed', () => {
-  const seed = INTERNAL_KEYS.seed;
-  const current = INTERNAL_KEYS.current;
+test('the refresh token in use: the rotated one while the pasted one is its seed (hashed)', () => {
+  const state = (seed, current) => ({ refresh_token_state: tokenState(seedHash(seed), current) });
   assert.equal(currentRefreshToken({ refresh_token: 'p1' }), 'p1');
-  assert.equal(currentRefreshToken({ refresh_token: 'p1', [seed]: 'p1', [current]: 'r9' }), 'r9');
+  assert.equal(currentRefreshToken({ refresh_token: 'p1', ...state('p1', 'r9') }), 'r9');
   assert.equal(
-    currentRefreshToken({ refresh_token: 'p2', [seed]: 'p1', [current]: 'r9' }),
+    currentRefreshToken({ refresh_token: 'p2', ...state('p1', 'r9') }),
     'p2',
     'a new one pasted',
   );
-  assert.equal(currentRefreshToken({ refresh_token: 'p1', [seed]: 'p1', [current]: '' }), 'p1');
-  assert.equal(currentRefreshToken({ [seed]: 'p1', [current]: 'r9' }), '', 'nothing pasted');
+  assert.equal(
+    currentRefreshToken({ refresh_token: 'p1', refresh_token_state: '{bad json' }),
+    'p1',
+  );
+  assert.equal(currentRefreshToken({ ...state('p1', 'r9') }), '', 'nothing pasted');
+  assert.ok(!tokenState(seedHash('p1'), 'r9').includes('p1'), 'the pasted token is never kept');
+  assert.equal(readTokenState({ seed: 'short', current: 'x' }), undefined);
+  assert.deepEqual(readTokenState(tokenState(seedHash('a'), ' r ')), {
+    seed: seedHash('a'),
+    current: 'r',
+  });
 });

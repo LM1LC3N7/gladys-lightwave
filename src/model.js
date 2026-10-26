@@ -22,7 +22,8 @@ const text = (value) =>
  * The feature sets of a structure answer: `{ id, name, productCode,
  * structureId, features: { <type>: featureId } }`, in the order of the
  * answer. A feature set without a valid id, or a feature without one, is
- * skipped; two feature sets with the same id keep the first one.
+ * skipped; two feature sets with the same id keep the first one; 2000 sets
+ * at most.
  */
 export function readStructure(raw, structureId) {
   const sets = [];
@@ -30,6 +31,9 @@ export function readStructure(raw, structureId) {
   for (const device of Array.isArray(raw?.devices) ? raw.devices : []) {
     const productCode = text(device?.productCode);
     for (const set of Array.isArray(device?.featureSets) ? device.featureSets : []) {
+      if (sets.length >= LIMITS.setsPerStructure) {
+        return sets;
+      }
       const id = validId(set?.featureSetId);
       if (!id || seen.has(id)) {
         continue;

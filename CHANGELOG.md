@@ -24,8 +24,15 @@ the notes of the version's GitHub Release.
   sensors, battery, power in watts. The hub, three-way relays, LEDs and
   buttons are not shown.
 - Heating commands off by default (`allow_heating`), target temperature
-  bounded to 5 °C and a configurable ceiling (25 °C, 40 at most); mode "off"
-  never held back by a pause or the queue.
+  bounded to 5 °C and a configurable ceiling (25 °C, 40 at most). Mode "off"
+  and 5 °C are protective: not held back by the option, a pause or the queue,
+  available right after a restart, checked by a read and sent again while
+  contradicted (the guide lists when they can fail).
+- A command a read contradicts is said in the status; reads after commands
+  grouped; 500 devices and 10 read requests per cycle at most; stale values
+  never published again; an API refusing fresh bearer tokens stops without
+  spending refresh tokens; an unexpected answer of the token endpoint no
+  longer counts as refused tokens.
 - Commands serialized per device within Gladys' 5 s and read again after;
   401/403/429/5xx handling with persisted stops and pauses; badges; the
   "Test the connection" button; docs en/fr; cover.

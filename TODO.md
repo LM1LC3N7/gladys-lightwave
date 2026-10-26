@@ -20,11 +20,22 @@ up to date at the end of every milestone.
       from lightwave2's `LWLink2Public`; the rotated refresh token kept in the
       Gladys configuration; lights, sockets, radiator valves, thermostats,
       window and movement sensors, battery, power; heating commands behind
-      `allow_heating` with a bounded target, "off" never held back; commands
+      `allow_heating` with a bounded target, protective "off" / 5 °C; commands
       serialized per device within Gladys' 5 s; 401/403/429/5xx with
       persisted stops and pauses; monotonic pacing with a real-clock test;
       badges; docs en/fr; cover. Tested against made-up answers only (Node 24
       and 22). Not tried on a real account.
+- [x] **Milestone 1 fixes — review r1** (2026-10-26): protective "off" and
+      5 °C before the first read after a restart (ids in /data), through
+      pauses, renewing a missing token, sent again on a 401; commands
+      checked by a read (protective ones sent again, 3 at most; others
+      warned about after 15 s); a heating command in flight overtaken by an
+      "off" (sticky resend, queued ones cancelled); a 401 on a fresh token
+      no longer renews (api_refused, stop at the 3rd); token endpoint
+      refusal only on OAuth answers; bounds (500 sets, 10 batches); stale
+      values not republished; getConfig fallback; grouped rereads; batch
+      isolation; monotonic publisher window; safer ids; one internal key with
+      a hashed seed; docs without false absolutes.
 - [ ] **Milestone 2 — real account**: run against a real account (see "To
       check on a real account"), turn the answers (anonymized) into fixtures,
       fix what differs.
@@ -63,21 +74,42 @@ up to date at the end of every milestone.
   app identifier header) that lightwave2 also carries is never used: no
   imitation of an application.
 - **The rotated refresh token lives in the Gladys configuration**
-  (`setConfig`, two keys outside the schema), not in `/data`: the brief
-  forbids a secret in `/data`, and the SDK documents `setConfig` as the
-  place for tokens. `src/config.js` chooses between the pasted token and the
-  rotated one by comparing the pasted field with the seed kept beside it.
+  (`setConfig`, one key outside the schema, `refresh_token_state`, so the
+  token and its seed are always written together; the seed is a hash of the
+  pasted token, never a second copy of it), not in `/data`: the brief forbids
+  a secret in `/data`, and the SDK documents `setConfig` as the place for
+  tokens. `src/config.js` chooses between the pasted token and the rotated
+  one by comparing the hash of the pasted field with the seed.
   Assumed: a used refresh token is spent (lightwave2 stores the new one);
   to confirm on a real account. If Lightwave does not rotate, nothing
   changes (the pasted token is reused).
 - **A refused token is final**: no spaced new tries (a spent refresh token
   stays spent; new tries could lock the account); new tokens pasted lift
-  the stop. Any other refusal of the token endpoint waits for a click.
+  the stop. "Refused" only on an OAuth answer (400/401 with
+  `invalid_grant`, `invalid_client`, `unauthorized_client`, or a 401 in
+  JSON); any other answer (403, a proxy page) waits for a click, the tokens
+  being probably unspent (review r1).
+- **A 401 on a bearer token issued less than 10 min ago** is not renewed
+  again (it would spend a refresh token per cycle): 2 then 4 min, then a
+  stop persisted at the 3rd, lifted by a click or new tokens (review r1).
 - **Heating**: `allow_heating` off by default, `max_setpoint` 25 °C by
   default and 40 °C at most (the range of the Home Assistant integration);
   a target out of bounds is refused with its exact reason, never clamped.
-  Mode "off" (`heatState` 0) is the protective command: it bypasses the
-  pauses, the backoff and the queue, needs a bearer token, is never retried.
+  Mode "off" (`heatState` 0) and 5 °C (`targetTemperature` 50, the only
+  way to stop a radiator valve, which has no off) are the protective
+  commands: they bypass the option, the pauses, the backoff and the queue;
+  the feature ids of the heating sets are kept in /data (not secret) so they
+  work after a restart before the first read; they renew a missing bearer
+  token and send again once on a 401; a read contradicting them sends them
+  again (3 at most) with a warning; a heating command still queued is
+  cancelled, one in flight makes the "off" leave again after its answer
+  (review r1).
+- **Commands confirmed by a read**, not by the HTTP 200: a target or a mode
+  a read contradicts after 15 s is a warning in the status, not resent.
+- **Freshness**: a value older than max(2 × interval, 10 min) is never
+  published again (update of a device, reconnection to Gladys).
+- **Bounds**: 2000 sets per structure, 500 shown, 10 `features/read` per
+  cycle; only the features of the shown sets are read.
 - **Thermostat mode only with `heatState`**: a radiator valve has no
   off/heat switch in Lightwave (its target temperature is the only command).
 - **Energy**: power in W only in v1; the cumulative Wh needs the index guard

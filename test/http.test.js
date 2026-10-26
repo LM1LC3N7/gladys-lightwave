@@ -20,8 +20,15 @@ test('token endpoint answers: refused, rejected, transient', () => {
   const kind = (status, body = '') => tokenError({ status, body, headers: {} })?.kind;
   assert.equal(kind(200, '{}'), undefined);
   assert.equal(kind(400, '{"error":"invalid_grant"}'), 'refused');
-  assert.equal(kind(401), 'refused');
-  assert.equal(kind(403), 'refused');
+  assert.equal(kind(400, '{"error":"invalid_client"}'), 'refused');
+  assert.equal(kind(401, '{"error":"unauthorized_client"}'), 'refused');
+  assert.equal(kind(401, '{"message":"Unauthorized"}'), 'refused', 'a 401 in JSON');
+  // A page of a proxy or a firewall: the tokens were not refused, nor spent.
+  assert.equal(kind(403, '<html>Access denied (edge)</html>'), 'token_rejected');
+  assert.equal(kind(403, '{"error":"invalid_grant"}'), 'token_rejected');
+  assert.equal(kind(400, '<html>Bad Request</html>'), 'token_rejected');
+  assert.equal(kind(400, '{"error":"invalid_request"}'), 'token_rejected');
+  assert.equal(kind(401), 'token_rejected', 'a 401 without a body');
   assert.equal(kind(418), 'token_rejected');
   assert.equal(kind(429), 'rate_limited');
   assert.equal(kind(502), 'unavailable');

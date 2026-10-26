@@ -44,6 +44,10 @@ export const join = (...messages) =>
   both(messages.map((m) => m.en).join(' '), messages.map((m) => m.fr).join(' '));
 
 export const T = {
+  notReadYet: both(
+    'Waiting for the first read since the start (only "off" and 5 °C of the heating are accepted until then).',
+    "En attente de la première lecture depuis le démarrage (seuls « arrêt » et 5 °C du chauffage sont acceptés d'ici là).",
+  ),
   noCredentials: both(
     'Enter the API token and the refresh token of your Lightwave account (the "API" page of my.lightwaverf.com).',
     "Saisissez le jeton d'API et le jeton de rafraîchissement de votre compte Lightwave (page « API » de my.lightwaverf.com).",
@@ -55,13 +59,13 @@ export const T = {
       `Connecté à Lightwave : ${supported} appareil(s) que Gladys peut afficher (sur ${count}). Ouvrez Découverte pour les ajouter.`,
     ),
   refused: both(
-    'Lightwave refused the API token or the refresh token. A refresh token is used once: generate a new one on the "API" page of my.lightwaverf.com, paste it in the configuration and save. The integration stops until then.',
-    "Lightwave a refusé le jeton d'API ou le jeton de rafraîchissement. Un jeton de rafraîchissement ne sert qu'une fois : générez-en un nouveau sur la page « API » de my.lightwaverf.com, collez-le dans la configuration et enregistrez. L'intégration s'arrête jusque-là.",
+    'Lightwave refused the API token or the refresh token (a refresh token is used once, per lightwave2): generate a new one on the "API" page of my.lightwaverf.com, paste it in the configuration and save. The integration stops until then.',
+    "Lightwave a refusé le jeton d'API ou le jeton de rafraîchissement (un jeton de rafraîchissement ne sert qu'une fois, d'après lightwave2) : générez-en un nouveau sur la page « API » de my.lightwaverf.com, collez-le dans la configuration et enregistrez. L'intégration s'arrête jusque-là.",
   ),
   tokenRejected: (status) =>
     both(
-      `Lightwave rejected the token request (HTTP ${status}): if it stays, the integration needs an update. Click "Test the connection" to try again.`,
-      `Lightwave a rejeté la demande de jeton (HTTP ${status}) : si cela reste, l'intégration doit être mise à jour. Cliquez sur « Tester la connexion » pour réessayer.`,
+      `Unexpected answer of the Lightwave token endpoint (HTTP ${status}); the tokens are probably still good. Click "Test the connection" (or save the configuration) to try again; if it stays, the integration needs an update.`,
+      `Réponse inattendue du point de jeton de Lightwave (HTTP ${status}) ; les jetons sont sans doute toujours bons. Cliquez sur « Tester la connexion » (ou enregistrez la configuration) pour réessayer ; si cela reste, l'intégration doit être mise à jour.`,
     ),
   tokenNotSaved: both(
     'The new refresh token Lightwave gave could not be saved in Gladys yet; it is kept in memory and saved again at the next read. Do not restart the integration before the status is back to normal.',
@@ -81,6 +85,35 @@ export const T = {
     both(
       `Lightwave not read (${reason}); new try in ${wait.en}.`,
       `Lightwave non lu (${reason}) ; nouvel essai dans ${wait.fr}.`,
+    ),
+  apiRefused: (wait) =>
+    both(
+      `The Lightwave API refuses a bearer token it has just issued (HTTP 401): does the account have access to the API? New try in ${wait.en}, without a new token.`,
+      `L'API Lightwave refuse un jeton porteur qu'elle vient d'émettre (HTTP 401) : le compte a-t-il accès à l'API ? Nouvel essai dans ${wait.fr}, sans nouveau jeton.`,
+    ),
+  apiRefusedStop: both(
+    'The Lightwave API refused the bearer token three times in a row (HTTP 401): stopped. Check the API access of the account, then click "Test the connection" or paste new tokens.',
+    "L'API Lightwave a refusé le jeton porteur trois fois de suite (HTTP 401) : arrêt. Vérifiez l'accès à l'API du compte, puis cliquez sur « Tester la connexion » ou collez de nouveaux jetons.",
+  ),
+  offNotApplied: (name) =>
+    both(
+      `"${name}": the off (or 5 °C) sent is not what Lightwave reads back; sent again. Check the device.`,
+      `« ${name} » : l'arrêt (ou 5 °C) envoyé n'est pas ce que Lightwave relit ; renvoyé. Vérifiez l'appareil.`,
+    ),
+  notApplied: (name) =>
+    both(
+      `"${name}": the last command is not what Lightwave reads back 15 s later (not applied).`,
+      `« ${name} » : la dernière commande n'est pas ce que Lightwave relit 15 s après (non appliquée).`,
+    ),
+  dropped: (count) =>
+    both(
+      `${count} more device(s) not shown (500 at most).`,
+      `${count} appareil(s) de plus non affiché(s) (500 au plus).`,
+    ),
+  unread: (count) =>
+    both(
+      `${count} device(s) not read this time (marked unreachable).`,
+      `${count} appareil(s) non lu(s) cette fois (marqués injoignables).`,
     ),
   partial: (count) =>
     both(
@@ -124,6 +157,26 @@ export const ERRORS = {
   blocked: both(
     'Not connected to Lightwave: see the status of the integration.',
     "Non connecté à Lightwave : voir le statut de l'intégration.",
+  ),
+  tokensRefused: both(
+    'Not sent: Lightwave refused the tokens, there is no token to send it with. Paste new tokens.',
+    "Non envoyée : Lightwave a refusé les jetons, aucun jeton pour l'envoyer. Collez de nouveaux jetons.",
+  ),
+  notReadYet: both(
+    'Not sent: the devices have not been read yet since the start of the integration; try again after the first read (see the status).',
+    "Non envoyée : les appareils n'ont pas encore été lus depuis le démarrage de l'intégration ; réessayez après la première lecture (voir le statut).",
+  ),
+  onlyProtectiveYet: both(
+    'Not sent: until the first read since the start, only "off" and 5 °C are accepted on this device.',
+    "Non envoyée : jusqu'à la première lecture depuis le démarrage, seuls « arrêt » et 5 °C sont acceptés sur cet appareil.",
+  ),
+  offPending: both(
+    'Not sent yet (a bearer token is being obtained): it leaves as soon as possible. Check the device.',
+    "Pas encore envoyée (un jeton porteur est en cours d'obtention) : elle part dès que possible. Vérifiez l'appareil.",
+  ),
+  cancelledByOff: both(
+    'Not sent: an "off" (or 5 °C) given after it on the same device cancels it.',
+    "Non envoyée : un « arrêt » (ou 5 °C) donné après elle sur le même appareil l'annule.",
   ),
   paused: both(
     'Lightwave is paused: see the status of the integration.',

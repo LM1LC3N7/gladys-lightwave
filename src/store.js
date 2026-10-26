@@ -4,11 +4,14 @@
 //   - a random salt made once (for the fingerprint below);
 //   - the end of a 429 or 403 pause (wall clock, kept across restarts and
 //     account changes);
-//   - a stop on refused tokens, tied to a salted fingerprint of the API token
-//     and the refresh token, so a restart does not retry what Lightwave
-//     refused, and new tokens do;
+//   - a stop on refused tokens (or on an API refusing every bearer token),
+//     tied to a salted fingerprint of the API token and the refresh token, so
+//     a restart does not retry what Lightwave refused, and new tokens do;
 //   - the time of the last read attempt, so a restart never reads sooner
-//     than the interval.
+//     than the interval;
+//   - the feature ids of the heating sets (`heatState`, `targetTemperature`,
+//     not secret, 500 sets at most), so "off" and 5 °C can be sent after a
+//     restart before the first read.
 // Every time read back is capped from now. The file is readable by the
 // container user only (0600). Taken from gladys-leviton (approved).
 // -----------------------------------------------------------------------------
@@ -16,7 +19,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { open, readFile, rename, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { TIMINGS } from './constants.js';
+import { validId } from './client.js';
+import { LIMITS, TIMINGS } from './constants.js';
 
 export const STATE_FILE = '/data/lightwave-state.json';
 /** A larger file is not ours: ignored (read bounded). */
@@ -91,6 +95,35 @@ export const fingerprint = (salt, apiToken, refreshToken) =>
 const time = (value) => (Number.isFinite(value) ? value : undefined);
 
 export const PAUSES = new Set(['rate', 'forbidden']);
+/** The stops kept across restarts (tied to the tokens). */
+export const BLOCKS = new Set(['refused', 'api_refused']);
+const PROTECT_TYPES = ['heatState', 'targetTemperature'];
+
+/** The feature ids of the heating sets, repaired: valid ids only, 500 sets at most. */
+export function normalizeProtect(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return out;
+  }
+  for (const [setId, features] of Object.entries(raw)) {
+    if (Object.keys(out).length >= LIMITS.devices) {
+      break;
+    }
+    if (!validId(setId) || !features || typeof features !== 'object') {
+      continue;
+    }
+    const kept = {};
+    for (const type of PROTECT_TYPES) {
+      if (validId(features[type])) {
+        kept[type] = features[type];
+      }
+    }
+    if (Object.keys(kept).length > 0) {
+      out[setId] = kept;
+    }
+  }
+  return out;
+}
 
 /** The persisted state, repaired; the pause end is capped from `now`. */
 export function normalizeMemory(raw, now = Date.now()) {
@@ -104,9 +137,10 @@ export function normalizeMemory(raw, now = Date.now()) {
         ? { kind: pause.kind, until: Math.min(until, now + TIMINGS.persistedPauseMax) }
         : null,
     block:
-      block?.kind === 'refused' && /^[0-9a-f]{16}$/.test(block?.fingerprint ?? '')
-        ? { kind: 'refused', fingerprint: block.fingerprint }
+      BLOCKS.has(block?.kind) && /^[0-9a-f]{16}$/.test(block?.fingerprint ?? '')
+        ? { kind: block.kind, fingerprint: block.fingerprint }
         : null,
+    protect: normalizeProtect(raw?.protect),
     lastAttemptAt:
       time(raw?.lastAttemptAt) === undefined ? undefined : Math.min(raw.lastAttemptAt, now),
   };

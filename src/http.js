@@ -13,9 +13,14 @@ import { LIMITS, TIMINGS } from './constants.js';
 /**
  * A failed Lightwave call. `kind`:
  * - `no_credentials`: no API token or refresh token (never sent);
- * - `refused`: the token endpoint refused the API token or the refresh token (400, 401, 403);
- * - `token_rejected`: any other refusal of the token endpoint (the API changed);
+ * - `refused`: the token endpoint refused the API token or the refresh token in
+ *   OAuth terms (400/401 with `error` invalid_grant, invalid_client,
+ *   unauthorized_client, or a 401 with a JSON body);
+ * - `token_rejected`: any other answer of the token endpoint (a 403 or a page
+ *   of a proxy, a body that is not JSON): the tokens may still be good;
  * - `unauthorized`: the API refused the bearer token (401);
+ * - `api_refused`: the API refused a bearer token just issued (401): the
+ *   account has no access to the API, renewing would not help;
  * - `forbidden`: a 403 of the API;
  * - `rate_limited`: 429, `retryAfter` in ms when given;
  * - `unavailable`: 5xx; `network`, `timeout`: no answer (`notSent`: it never left);
@@ -187,6 +192,9 @@ export function transientError({ status, headers = {} }, now) {
   return undefined;
 }
 
+/** The OAuth errors that mean the tokens themselves are refused. */
+const OAUTH_REFUSALS = new Set(['invalid_grant', 'invalid_client', 'unauthorized_client']);
+
 /** The error of a token endpoint answer, or undefined when it is a success. */
 export function tokenError(answer, { now } = {}) {
   const { status } = answer;
@@ -197,10 +205,23 @@ export function tokenError(answer, { now } = {}) {
   if (transient) {
     return transient;
   }
-  if (status === 400 || status === 401 || status === 403) {
+  let json;
+  try {
+    json = parseJson(answer.body);
+  } catch {
+    json = undefined;
+  }
+  const isJson = json !== null && typeof json === 'object' && !Array.isArray(json);
+  const code = isJson && typeof json.error === 'string' ? json.error : undefined;
+  if ((status === 400 || status === 401) && OAUTH_REFUSALS.has(code)) {
     return new LightwaveError('refused', 'API token or refresh token refused', { status });
   }
-  return new LightwaveError('token_rejected', 'token request rejected', { status });
+  if (status === 401 && isJson) {
+    return new LightwaveError('refused', 'API token or refresh token refused', { status });
+  }
+  return new LightwaveError('token_rejected', 'unexpected answer of the token endpoint', {
+    status,
+  });
 }
 
 /** The error of an API answer (reads and commands), or undefined when it is a success. */

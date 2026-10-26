@@ -13,7 +13,13 @@ import { fileStore, fingerprint, newSalt, normalizeMemory } from '../src/store.j
 test('normalizeMemory: repaired, pause capped, stop with its fingerprint, attempt capped', () => {
   const now = 1_000_000_000;
   const empty = normalizeMemory(null, now);
-  assert.deepEqual(empty, { salt: null, pause: null, block: null, lastAttemptAt: undefined });
+  assert.deepEqual(empty, {
+    salt: null,
+    pause: null,
+    block: null,
+    protect: {},
+    lastAttemptAt: undefined,
+  });
   const memory = normalizeMemory(
     {
       salt: 'a'.repeat(32),

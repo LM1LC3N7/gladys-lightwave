@@ -25,42 +25,53 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (LightwaveApp)
   with the API token as the `basic` authorization and
   `{ "grant_type": "refresh_token", "refresh_token": … }`; the answer gives
   the bearer token (`expires_in`, one hour assumed without it) **and a new
-  refresh token**. The bearer token lives in memory, renewed a tenth of its
-  life before its end (5 min to 1 h), or once after a 401 of a read. The new
-  refresh token is kept in the Gladys configuration through `setConfig`, as
-  two keys outside the schema (`refresh_token_current`, and
-  `refresh_token_seed`: the pasted token it derives from); `src/config.js`
-  picks the current one while the pasted field still equals the seed, the
-  pasted one otherwise. Not saved (Gladys unreachable): kept in memory,
+  refresh token** (per lightwave2). The bearer token lives in memory,
+  renewed a tenth of its life before its end (5 min to 1 h), or once after a
+  401 on a token older than 10 min (a 401 on a newer one is `api_refused`:
+  no renewal, 2 then 4 min, a stop at the 3rd). The new refresh token is
+  kept in the Gladys configuration through `setConfig`, as one key outside
+  the schema (`refresh_token_state`: `{ current, seed }`, `seed` a hash of
+  the pasted token it derives from); `src/config.js` picks the current one
+  while the pasted field still hashes to the seed, the pasted one otherwise. Not saved (Gladys unreachable): kept in memory,
   saved again at every cycle, said in the status. Never a token in `/data`
   nor in the logs.
 - **Reads**: `GET /v1/structures`, then `GET /v1/structure/<id>` for each
   (ten at most), once an hour, each structure on its own (a failure keeps its
   last feature sets, unreachable and not sent again, tried again in 5 min);
-  `POST /v1/features/read` with the ids of the features read (150 per
-  request) every 60 s (30–300). Answers read up to 2 MiB, redirects never
-  followed, a new socket per request, ids of a safe alphabet only.
+  `POST /v1/features/read` with the ids of the features of the shown sets
+  (150 per request, 10 requests at most; a request that fails marks only its
+  own sets unreachable) every 60 s (30–300). 2000 sets per structure and 500
+  shown at most. Answers read up to 2 MiB, redirects never followed, a new
+  socket per request, ids of `[A-Za-z0-9_+-]` only. A value older than twice
+  the interval (10 min at least) is never published again.
 - **Commands**: `POST /v1/feature/<id>` with `{ "value": n }`: `switch` 0/1,
   `dimLevel` then `switch` 1 for a brightness (0: `switch` 0),
   `targetTemperature` in tenths of a degree, `heatState` 0/1. One at a time
   per device, sent within 3 s of the click (queue, renewal in progress and a
   send limit included) or refused unsent, "done" at 4.3 s only once sent,
   never a renewal from a command; the value shown at once and held 15 s
-  against a stale read, the set read again 2 s after.
+  against a stale read, the sets commanded read again 2 s after in one
+  request; a value a read contradicts after 15 s is a warning in the status.
 - **Heating safety**: the target temperature and the mode "heating" are
   refused unless `allow_heating` (off by default), read from the
   configuration right before the send; a target is bounded to 5 °C and
-  `max_setpoint` (25 by default, 40 at most). Mode "off" is protective:
-  never held back by a 429/403 pause, a backoff or the queue of the device;
-  it needs a bearer token.
-- **Errors**: a refused refresh or API token (400/401/403 of the token
-  endpoint): a final stop kept in `/data` (salted fingerprint of the tokens),
-  lifted by new tokens only; any other refusal of the token endpoint: a stop
-  until a click. 429 (`Retry-After` bounded to 1 min – 6 h, 15 min without
-  it) and a 403 of the reads (1 h) pause every path but "off", kept in
-  `/data` and capped when read back. 5xx/network/bad answers: 1, 2, 5, 10,
-  then 15 minutes, never under the interval. A 401 of a read: one renewal
-  and the read again; every read failing after it counts as unreachable.
+  `max_setpoint` (25 by default, 40 at most). Mode "off" and 5 °C are
+  protective: not held back by the option, a 429/403 pause, a backoff or the
+  queue (queued commands of the device cancelled, one in flight makes the
+  "off" leave again after its answer); sent before the first read after a
+  restart from the ids kept in `/data`; a missing token renewed, a 401 sent
+  again once; checked by a read and sent again (3 at most) while
+  contradicted. They fail on refused tokens, a device never read, or an
+  error of the token endpoint or of the write.
+- **Errors**: a refused refresh or API token (400/401 of the token endpoint
+  with `invalid_grant`, `invalid_client`, `unauthorized_client`, or a 401 in
+  JSON): a final stop kept in `/data` (salted fingerprint of the tokens),
+  lifted by new tokens only; any other answer of the token endpoint (a 403,
+  a page that is not JSON): a stop until a click. 429 (`Retry-After` bounded
+  to 1 min – 6 h, 15 min without it) and a 403 of the reads (1 h) pause
+  every path but the protective commands, kept in `/data` and capped when
+  read back. 5xx/network/bad answers: 1, 2, 5, 10, then 15 minutes, not
+  under the interval.
 - **Clock**: the reads, pauses, holds and command deadlines are paced on the
   monotonic clock (`dueAt(mono)` takes the instant already read: one read of
   the clock per decision); the wall clock dates `/data` only. A restart

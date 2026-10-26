@@ -19,6 +19,14 @@ export const CONFIG = { api_token: API_TOKEN, refresh_token: REFRESH_TOKEN, lang
 /** The user saves the configuration: Gladys sends the whole of it back, internal keys included. */
 export const save = (s, patch) =>
   s.gladys.fake.configUpdated({ ...s.gladys.fake.config, ...patch });
+/** The rotated refresh token kept in the Gladys configuration (or undefined). */
+export const currentOf = (config) => {
+  try {
+    return JSON.parse(config.refresh_token_state).current;
+  } catch {
+    return undefined;
+  }
+};
 export const device = (id) => `ext:${SELECTOR}:device:${id}`;
 export const feature = (id, key) => `${device(id)}:${key}`;
 

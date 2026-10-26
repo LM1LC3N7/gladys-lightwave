@@ -21,8 +21,8 @@
         "fr": "Votre compte Lightwave"
       },
       "description": {
-        "en": "Shows the Lightwave Smart devices of your account (Link Plus hub, generations 1 and 2) in Gladys: lights and dimmers, sockets and relays (on/off), radiator valves and thermostats (temperature, target, mode, heating state), window and movement sensors, battery, power in watts. Open the \"API\" page of my.lightwaverf.com, create an API token and a refresh token, paste them here and save, then add the devices from the Discovery tab. Read every 60 seconds; the heating commands are off until you allow them below. Public API of Lightwave, never tested with a real account. Not affiliated with Lightwave.",
-        "fr": "Affiche dans Gladys les appareils Lightwave Smart de votre compte (hub Link Plus, générations 1 et 2) : lumières et variateurs, prises et relais (marche/arrêt), vannes de radiateur et thermostats (température, consigne, mode, état de chauffe), capteurs de fenêtre et de mouvement, batterie, puissance en watts. Ouvrez la page « API » de my.lightwaverf.com, créez un jeton d'API et un jeton de rafraîchissement, collez-les ici et enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Lecture toutes les 60 secondes ; les commandes de chauffage sont désactivées tant que vous ne les autorisez pas ci-dessous. API publique de Lightwave, jamais testée avec un vrai compte. Sans lien avec Lightwave."
+        "en": "Shows the Lightwave Smart devices of your account (Link Plus hub, generations 1 and 2) in Gladys: lights and dimmers, sockets and relays (on/off), radiator valves and thermostats (temperature, target, mode, heating state), window and movement sensors, battery, power in watts. Open the \"API\" page of my.lightwaverf.com, create an API token and a refresh token, paste them here and save, then add the devices from the Discovery tab. Read every 60 seconds; the heating commands (except \"off\" and 5 °C) are off until you allow them below. Public API of Lightwave, never tested with a real account. Not affiliated with Lightwave.",
+        "fr": "Affiche dans Gladys les appareils Lightwave Smart de votre compte (hub Link Plus, générations 1 et 2) : lumières et variateurs, prises et relais (marche/arrêt), vannes de radiateur et thermostats (température, consigne, mode, état de chauffe), capteurs de fenêtre et de mouvement, batterie, puissance en watts. Ouvrez la page « API » de my.lightwaverf.com, créez un jeton d'API et un jeton de rafraîchissement, collez-les ici et enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Lecture toutes les 60 secondes ; les commandes de chauffage (sauf « arrêt » et 5 °C) sont désactivées tant que vous ne les autorisez pas ci-dessous. API publique de Lightwave, jamais testée avec un vrai compte. Sans lien avec Lightwave."
       },
       "links": [
         {
@@ -62,8 +62,8 @@
         "fr": "Jeton de rafraîchissement"
       },
       "description": {
-        "en": "The \"refresh token\" of the same page. It is used once: Lightwave then gives a new one at each renewal, which the integration keeps in the Gladys configuration by itself. Paste a new one only if the status asks for it.",
-        "fr": "Le « jeton de rafraîchissement » de la même page. Il ne sert qu'une fois : Lightwave en donne ensuite un nouveau à chaque renouvellement, que l'intégration garde elle-même dans la configuration de Gladys. Collez-en un nouveau seulement si le statut le demande."
+        "en": "The \"refresh token\" of the same page. Per lightwave2, Lightwave gives a new one at each renewal; the integration keeps it in the Gladys configuration by itself. Paste a new one only if the status asks for it.",
+        "fr": "Le « jeton de rafraîchissement » de la même page. D'après lightwave2, Lightwave en donne un nouveau à chaque renouvellement ; l'intégration le garde elle-même dans la configuration de Gladys. Collez-en un nouveau seulement si le statut le demande."
       },
       "required": true
     },
@@ -91,8 +91,8 @@
         "fr": "Autoriser les commandes de chauffage"
       },
       "description": {
-        "en": "Off by default: the target temperature and the \"heating\" mode of the radiator valves and thermostats are refused. Setting a thermostat to \"off\" is always accepted.",
-        "fr": "Désactivé par défaut : la température de consigne et le mode « chauffage » des vannes de radiateur et thermostats sont refusés. Mettre un thermostat à « arrêt » est toujours accepté."
+        "en": "Off by default: any other target temperature than 5 °C and the \"heating\" mode are refused. \"Off\" and 5 °C are not held back by this option nor by a pause; they can still fail (refused tokens, Lightwave errors: see the guide).",
+        "fr": "Désactivé par défaut : toute consigne autre que 5 °C et le mode « chauffage » sont refusés. « Arrêt » et 5 °C ne sont retenus ni par cette option ni par une pause ; ils peuvent quand même échouer (jetons refusés, erreurs de Lightwave : voir le guide)."
       },
       "required": false,
       "default": false
@@ -152,8 +152,8 @@
         "fr": "Tester la connexion"
       },
       "description": {
-        "en": "Renews the bearer token if needed and reads the devices once (never sooner than the interval after the last read). Also tries again after a rejected token request.",
-        "fr": "Renouvelle le jeton si besoin et lit une fois les appareils (jamais plus tôt que l'intervalle après la dernière lecture). Réessaie aussi après une demande de jeton rejetée."
+        "en": "Renews the bearer token if needed and reads the devices once (not sooner than the interval after the last read). Also tries again after an unexpected token answer or an API refusal.",
+        "fr": "Renouvelle le jeton si besoin et lit une fois les appareils (pas plus tôt que l'intervalle après la dernière lecture). Réessaie aussi après une réponse de jeton inattendue ou un refus de l'API."
       },
       "timeout_seconds": 60
     }

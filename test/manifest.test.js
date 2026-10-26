@@ -60,6 +60,24 @@ test('the store basics, and the version set by hand to 0.1.0 everywhere', () => 
   }
 });
 
+test('no false absolute about the protective commands (review r1, point 9)', () => {
+  const FALSE =
+    /always accepted|toujours accepté|never held back|n'est refusé que|is refused only|passe quand même|still goes through|is used once|ne sert qu'une fois[^,]/i;
+  for (const file of [
+    'gladys-assistant-integration.json',
+    'docs/en.md',
+    'docs/fr.md',
+    'README.md',
+    'CLAUDE.md',
+    'CHANGELOG.md',
+  ]) {
+    assert.doesNotMatch(read(file), FALSE, file);
+  }
+  for (const lang of ['en', 'fr']) {
+    assert.match(read(`docs/${lang}.md`), /no identifier kept|aucun identifiant\s+gardé/);
+  }
+});
+
 test('every text is in English and French', () => {
   for (const [path, text] of texts(manifest)) {
     for (const lang of ['en', 'fr']) {

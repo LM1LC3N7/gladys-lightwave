@@ -43,6 +43,8 @@ export function fakeLightwave({ ttl = 86_400 } = {}) {
     queue: [],
     /** Called with each request before it is answered (may wait). */
     before: undefined,
+    /** Whether a write answered 200 is applied (false: Lightwave answers but keeps the old value). */
+    applyWrite: () => true,
     of(path, method) {
       return this.requests.filter((r) => r.path === path && (!method || r.method === method));
     },
@@ -166,7 +168,9 @@ export function fakeLightwave({ ttl = 86_400 } = {}) {
         return answer(200, { value: server.values[id] });
       }
       if (method === 'POST') {
-        server.values[id] = request.json?.value;
+        if (server.applyWrite(id, request.json?.value, request) !== false) {
+          server.values[id] = request.json?.value;
+        }
         return answer(200, { value: request.json?.value });
       }
     }

@@ -22,9 +22,20 @@ export function registerHandlers(gladys, app, logger) {
   gladys.onConfigUpdated((config) => app.configUpdated(config));
 
   // Connection lifecycle: the first connection starts, a reconnection resends.
+  // The configuration is read again; if that fails, the copy the SDK took
+  // when it connected is used, so the integration never stays idle.
   gladys.on('connected', async () => {
+    let config;
     try {
-      await app.connected(await gladys.getConfig());
+      config = await gladys.getConfig();
+    } catch (err) {
+      logger?.warn(
+        `Reading the configuration failed, using the last one: ${err?.message ?? 'unknown error'}`,
+      );
+      config = gladys.config ?? {};
+    }
+    try {
+      await app.connected(config);
     } catch (err) {
       logger?.error(`Start failed: ${err?.message ?? 'unknown error'}`);
     }

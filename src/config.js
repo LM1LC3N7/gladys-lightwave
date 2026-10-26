@@ -1,11 +1,12 @@
 // -----------------------------------------------------------------------------
-// The configuration of the manifest `config_schema`, normalized, plus the two
-// keys the integration keeps in the Gladys configuration outside the schema
-// (`setConfig`, never shown): the refresh token Lightwave gave last
-// (`refresh_token_current`) and the one the user had pasted when it was
-// obtained (`refresh_token_seed`). Lightwave gives a new refresh token at
-// every renewal of the bearer token: it is kept in the Gladys database, as
-// the secret fields are, never in /data.
+// The configuration of the manifest `config_schema`, normalized, plus the one
+// key the integration keeps in the Gladys configuration outside the schema
+// (`setConfig`, never shown): `refresh_token_state`, a JSON string holding the
+// refresh token Lightwave gave last (`current`) and a hash of the token the
+// user had pasted when it was obtained (`seed`, never the token itself). One
+// key, so the two are always written together. Lightwave gives (per
+// lightwave2) a new refresh token at every renewal of the bearer token: it is
+// kept in the Gladys database, as the secret fields are, never in /data.
 // -----------------------------------------------------------------------------
 
 import { createHash } from 'node:crypto';
@@ -21,11 +22,43 @@ export const DEFAULTS = {
 
 export const LANGUAGES = ['fr', 'en'];
 
-/** The keys kept outside the schema. */
+/** The key kept outside the schema. */
 export const INTERNAL_KEYS = {
-  seed: 'refresh_token_seed',
-  current: 'refresh_token_current',
+  state: 'refresh_token_state',
 };
+
+/** The hash of a pasted refresh token (16 hex digits): what the rotated one derives from. */
+export const seedHash = (token) =>
+  createHash('sha256')
+    .update(String(token ?? '').trim())
+    .digest('hex')
+    .slice(0, 16);
+
+/** The value of `refresh_token_state`. */
+export const tokenState = (seed, current) => JSON.stringify({ seed, current });
+
+/** `refresh_token_state` read back: `{ seed, current }` or undefined. */
+export function readTokenState(raw) {
+  let state = raw;
+  if (typeof raw === 'string') {
+    try {
+      state = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  if (
+    !state ||
+    typeof state !== 'object' ||
+    !/^[0-9a-f]{16}$/.test(state.seed ?? '') ||
+    typeof state.current !== 'string' ||
+    state.current.trim() === '' ||
+    state.current.length > 4096
+  ) {
+    return undefined;
+  }
+  return { seed: state.seed, current: state.current.trim() };
+}
 
 /** A short hash of the API token: the account a pause or a stop belongs to, without the token. */
 export const accountKey = (apiToken) =>
@@ -60,9 +93,8 @@ const secret = (raw) => String(raw ?? '').trim();
  */
 export function currentRefreshToken(raw = {}) {
   const pasted = secret(raw?.refresh_token);
-  const seed = secret(raw?.[INTERNAL_KEYS.seed]);
-  const current = secret(raw?.[INTERNAL_KEYS.current]);
-  return pasted !== '' && seed === pasted && current !== '' ? current : pasted;
+  const state = readTokenState(raw?.[INTERNAL_KEYS.state]);
+  return pasted !== '' && state && state.seed === seedHash(pasted) ? state.current : pasted;
 }
 
 export function normalizeConfig(raw = {}) {

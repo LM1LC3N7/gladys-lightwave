@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEVICE_TRANSPORTS } from '@gladysassistant/integration-sdk';
 import { ACTIONS } from '../src/constants.js';
-import { INTERNAL_KEYS } from '../src/config.js';
+import { INTERNAL_KEYS, seedHash, tokenState } from '../src/config.js';
 import { memoryStore } from '../src/store.js';
 import {
   API_TOKEN,
@@ -21,7 +21,7 @@ import {
   STRUCTURES,
 } from './fixtures/lightwave.js';
 import { fakeLightwave } from './helpers/fakeLightwave.js';
-import { CONFIG, device, feature, save, setup } from './helpers/app.js';
+import { CONFIG, currentOf, device, feature, save, setup } from './helpers/app.js';
 
 const status = (s) => s.gladys.fake.connectionStatus;
 const lastState = (s, id, key) => s.gladys.fake.lastState(feature(id, key));
@@ -65,8 +65,10 @@ test('the token endpoint, the structures, the values; the new refresh token save
   assert.match(status(s).message.en, /Connected to Lightwave: 6 device\(s\).*out of 8/);
   // The rotated refresh token lives in the Gladys configuration, never in /data.
   const config = s.gladys.fake.config;
-  assert.equal(config[INTERNAL_KEYS.seed], REFRESH_TOKEN);
-  assert.match(config[INTERNAL_KEYS.current], /^refresh1/);
+  const state = JSON.parse(config[INTERNAL_KEYS.state]);
+  assert.equal(state.seed, seedHash(REFRESH_TOKEN), 'a hash of the pasted token, never the token');
+  assert.match(state.current, /^refresh1/);
+  assert.ok(!config[INTERNAL_KEYS.state].includes(REFRESH_TOKEN));
   assert.equal(config.refresh_token, REFRESH_TOKEN, 'the pasted one is untouched');
   const data = JSON.stringify(s.store.data);
   for (const secret of s.server.secrets) {
@@ -181,7 +183,7 @@ test('the bearer token is renewed before its end, with the refresh token Lightwa
   assert.equal(s.server.tokens().length, 2, 'renewed a tenth of its life (6 min) before the end');
   const [, second] = s.server.tokens();
   assert.match(second.json.refresh_token, /^refresh1/, 'the rotated one, not the pasted one');
-  assert.match(s.gladys.fake.config[INTERNAL_KEYS.current], /^refresh2/);
+  assert.match(currentOf(s.gladys.fake.config), /^refresh2/);
   assert.equal(status(s).connected, true);
 });
 
@@ -229,24 +231,35 @@ test('a refused refresh token stops for good, survives a restart; new tokens lif
   assert.equal(again.store.data.block, null);
 });
 
-test('a bearer token refused by the API: renewed once and the read again; refused again: unreachable, next cycle', async () => {
+test('a bearer token refused by the API: an old one is renewed once and the read again', async () => {
   const s = await setup();
+  await s.wait(11 * MINUTE);
   s.server.revokeBearers();
   await s.wait(MINUTE);
   assert.equal(s.server.tokens().length, 2, 'one renewal');
   assert.equal(status(s).connected, true);
-  // Every bearer refused: the cycle fails, no loop of renewals.
+});
+
+test('the API refusing every bearer token: no new token per cycle, unreachable, a stop at the 3rd', async () => {
+  const s = await setup();
   s.server.before = (r) => {
     if (r.host === 'publicapi.lightwaverf.com') {
       s.server.revokeBearers();
     }
   };
   await s.wait(MINUTE);
-  assert.equal(s.server.tokens().length, 3);
   assert.equal(status(s).connected, false);
-  assert.match(status(s).message.en, /not read/);
-  await s.wait(MINUTE);
-  assert.equal(s.server.tokens().length, 4, 'one per cycle at most');
+  assert.match(status(s).message.en, /refuses a bearer token it has just issued.*2 min/);
+  assert.equal(badge(s, SETS.light), DEVICE_TRANSPORTS.UNREACHABLE);
+  await s.wait(6 * HOUR);
+  assert.ok(s.server.tokens().length <= 2, `${s.server.tokens().length} token requests in 6 h`);
+  assert.match(status(s).message.en, /three times in a row/);
+  assert.equal(s.store.data.block.kind, 'api_refused');
+  // The button tries again, once.
+  s.server.before = undefined;
+  const result = await s.gladys.fake.action(ACTIONS.TEST_CONNECTION);
+  assert.match(result.data.message.en, /^Connected/);
+  assert.equal(s.store.data.block, null);
 });
 
 test('the new refresh token not saved in Gladys: kept in memory, saved later, said in the status', async (t) => {
@@ -260,7 +273,7 @@ test('the new refresh token not saved in Gladys: kept in memory, saved later, sa
   await s.wait(56 * MINUTE);
   assert.equal(s.server.tokens().length, 2);
   assert.match(status(s).message.en, /could not be saved in Gladys yet/);
-  assert.equal(s.gladys.fake.config[INTERNAL_KEYS.current].startsWith('refresh1'), true);
+  assert.equal(currentOf(s.gladys.fake.config).startsWith('refresh1'), true);
   // Gladys sends the configuration back meanwhile (a save by the user): the
   // token in memory is kept, no new renewal.
   await s.gladys.fake.configUpdated({ ...s.gladys.fake.config });
@@ -268,16 +281,22 @@ test('the new refresh token not saved in Gladys: kept in memory, saved later, sa
   assert.equal(s.server.tokens().length, 2);
   fail = false;
   await s.wait(MINUTE);
-  assert.match(s.gladys.fake.config[INTERNAL_KEYS.current], /^refresh2/);
+  assert.match(currentOf(s.gladys.fake.config), /^refresh2/);
   assert.doesNotMatch(status(s).message.en, /could not be saved/);
   // A page loaded before the rotation, saved now: its stale token is not
   // used, the right one is saved again.
   const stale = s.server.secrets.find((x) => x.startsWith('refresh1'));
-  await s.gladys.fake.configUpdated({ ...s.gladys.fake.config, [INTERNAL_KEYS.current]: stale });
+  await s.gladys.fake.configUpdated({
+    ...s.gladys.fake.config,
+    [INTERNAL_KEYS.state]: tokenState(seedHash(REFRESH_TOKEN), stale),
+    poll_interval: 120,
+  });
   await s.wait(MINUTE);
   assert.equal(s.server.tokens().length, 2, 'no renewal with the stale token');
-  assert.match(s.gladys.fake.config[INTERNAL_KEYS.current], /^refresh2/);
+  assert.match(currentOf(s.gladys.fake.config), /^refresh2/);
   assert.equal(status(s).connected, true);
+  // The rest of that save is applied: the new interval.
+  assert.equal(s.app.config.pollInterval, 120);
 });
 
 test('commands: on/off, brightness (level then on, 0 turns off), read again 2 s later', async () => {
@@ -433,10 +452,11 @@ test('a refused or failed command says so; a 401 on a command never renews from 
   });
   result = await setValue(s, SETS.socket, 'power', 1);
   assert.match(result.error, /Sent, without confirmation/);
+  await s.wait(11 * MINUTE);
   const tokens = s.server.tokens().length;
   s.server.revokeBearers();
   result = await setValue(s, SETS.socket, 'power', 1);
-  assert.match(result.error, /Refused by Lightwave/);
+  assert.match(result.error, /Refused by Lightwave \(bearer token refused/);
   assert.equal(s.server.tokens().length, tokens, 'no renewal from a command');
   await s.wait(MINUTE);
   assert.equal(s.server.tokens().length, tokens + 1, 'the next cycle renews');
@@ -643,7 +663,10 @@ test('a rejected token request (not a refusal) stops until a click: the button o
     })(),
   });
   assert.equal(status(s).connected, false);
-  assert.match(status(s).message.en, /rejected the token request \(HTTP 418\)/);
+  assert.match(
+    status(s).message.en,
+    /Unexpected answer of the Lightwave token endpoint \(HTTP 418\)/,
+  );
   await s.wait(HOUR);
   assert.equal(s.server.tokens().length, 1, 'no automatic new try');
   await s.wait(MINUTE);

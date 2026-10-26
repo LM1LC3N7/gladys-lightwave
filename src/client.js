@@ -7,24 +7,38 @@
 // The bearer token lives in memory only; Lightwave gives a new refresh token
 // with every bearer token, handed to `onToken` (the app keeps it in the
 // Gladys configuration). A 401 of a read renews the token once and reads
-// again; a command never renews (it would leave late): it fails, and the
-// next cycle renews. One renewal at a time, never in a loop: a refused one
-// is final for these tokens.
+// again, unless that token was just issued (the API then refuses the
+// account: `api_refused`, never a renewal per cycle). A command never renews
+// (it would leave late), except a protective one ("off", 5 °C), which renews
+// and sends again on a 401. One renewal at a time, never in a loop: a
+// refused one is final for these tokens.
 // -----------------------------------------------------------------------------
 
 import { API_ROOT, LIMITS, PATHS, TIMINGS, TOKEN_URL, USER_AGENT } from './constants.js';
 import { LightwaveError, apiError, httpRequest, parseJson, tokenError } from './http.js';
 
+/** The errors of one `features/read` request that leave the other requests going. */
+const BATCH_LOCAL = new Set(['http', 'unavailable', 'network', 'timeout', 'bad_response', 'size']);
+
+const refusedByApi = () =>
+  new LightwaveError('api_refused', 'the API refused a new bearer token', { status: 401 });
+
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** A feature or feature set id of Lightwave: printable, bounded. */
 export const validId = (value) =>
-  typeof value === 'string' && /^[A-Za-z0-9_+:.-]{1,120}$/.test(value) ? value : undefined;
+  typeof value === 'string' && /^[A-Za-z0-9_+-]{1,120}$/.test(value) ? value : undefined;
 
 export class LightwaveClient {
-  constructor({ transport = httpRequest, now = Date.now, onToken } = {}) {
+  constructor({
+    transport = httpRequest,
+    now = Date.now,
+    monotonic = () => performance.now(),
+    onToken,
+  } = {}) {
     this.transport = transport;
     this.now = now;
+    this.monotonic = monotonic;
     this.onToken = onToken;
     this.apiToken = '';
     this.refreshToken = '';
@@ -117,7 +131,12 @@ export class LightwaveClient {
       typeof json.expires_in === 'number' && json.expires_in > 0 && json.expires_in < 365 * 86_400
         ? json.expires_in * 1000
         : TIMINGS.tokenDefaultTtl;
-    this.session = { accessToken, issuedAt: now, expiresAt: now + ttl };
+    this.session = {
+      accessToken,
+      issuedAt: now,
+      expiresAt: now + ttl,
+      issuedMono: this.monotonic(),
+    };
     const next = typeof json.refresh_token === 'string' ? json.refresh_token.trim() : '';
     if (next !== '' && next.length <= 4096 && next !== refreshToken) {
       this.refreshToken = next;
@@ -148,8 +167,9 @@ export class LightwaveClient {
   }
 
   /**
-   * One API call; `retryAuth`: a 401 renews the token once and sends again
-   * (reads only). The JSON of the answer, `undefined` when empty.
+   * One API call; `retryAuth`: a 401 renews the token once and sends again.
+   * A 401 on a bearer token issued less than 10 min ago is `api_refused`,
+   * without a renewal. The JSON of the answer, `undefined` when empty.
    */
   async api(path, { method = 'GET', json, retryAuth = false, allowRefresh = true, ...rest } = {}) {
     const send = async (token) => {
@@ -167,21 +187,35 @@ export class LightwaveClient {
         ...rest,
       });
     };
-    const session = this.session;
-    let answer = await send(await this.ensureToken({ allowRefresh, timeout: rest.timeout }));
+    const token = await this.ensureToken({ allowRefresh, timeout: rest.timeout });
+    const used = this.session;
+    let answer = await send(token);
     let error = apiError(answer, { now: this.now() });
-    if (error?.kind === 'unauthorized' && retryAuth && allowRefresh) {
-      if (this.session === session || !this.session) {
-        // Only the token this call used is dropped: a token renewed meanwhile stays.
-        this.session = null;
+    if (error?.kind === 'unauthorized') {
+      if (this.isFresh(used)) {
+        throw refusedByApi();
       }
-      answer = await send(await this.ensureToken({ timeout: rest.timeout }));
-      error = apiError(answer, { now: this.now() });
+      if (retryAuth && allowRefresh) {
+        if (this.session === used) {
+          // Only the token this call used is dropped: a token renewed meanwhile stays.
+          this.session = null;
+        }
+        answer = await send(await this.ensureToken({ timeout: rest.timeout }));
+        error = apiError(answer, { now: this.now() });
+        if (error?.kind === 'unauthorized') {
+          throw refusedByApi();
+        }
+      }
     }
     if (error) {
       throw error;
     }
     return parseJson(answer.body);
+  }
+
+  /** Whether a session was issued less than `freshToken` ago (monotonic). */
+  isFresh(session) {
+    return Boolean(session) && this.monotonic() - session.issuedMono < TIMINGS.freshToken;
   }
 
   /** The ids of the structures (homes) of the account. */
@@ -207,30 +241,56 @@ export class LightwaveClient {
   }
 
   /**
-   * The values of features, by id (150 per request, as lightwave2). A value
-   * that is not a finite number is left out.
+   * The values of features, by id: 150 per request (as lightwave2), 10
+   * requests at most (the ids beyond are `failed`, not read). A request that
+   * fails on its own (5xx, network, bad answer) leaves its ids in `failed`
+   * and the others go on; it throws only when every request failed, or on
+   * an error of the account (401, 403, 429). A value that is not a finite
+   * number is left out. `{ values, failed }`.
    */
   async readFeatures(ids, options = {}) {
     const values = new Map();
-    for (let i = 0; i < ids.length; i += LIMITS.featuresPerRead) {
-      const chunk = ids.slice(i, i + LIMITS.featuresPerRead).filter(validId);
-      const json = await this.api(PATHS.read, {
-        method: 'POST',
-        json: { features: chunk.map((featureId) => ({ featureId })) },
-        retryAuth: true,
-        ...options,
-      });
-      if (!isObject(json)) {
-        throw new LightwaveError('bad_response', 'the feature values are not an object');
-      }
-      for (const id of chunk) {
-        const value = json[id];
-        if (typeof value === 'number' && Number.isFinite(value)) {
-          values.set(id, value);
+    const failed = new Set();
+    const list = ids.filter(validId);
+    const limit = LIMITS.featuresPerRead * LIMITS.readBatches;
+    for (const id of list.slice(limit)) {
+      failed.add(id);
+    }
+    let ok = 0;
+    let first;
+    for (let i = 0; i < Math.min(list.length, limit); i += LIMITS.featuresPerRead) {
+      const chunk = list.slice(i, Math.min(i + LIMITS.featuresPerRead, limit));
+      try {
+        const json = await this.api(PATHS.read, {
+          method: 'POST',
+          json: { features: chunk.map((featureId) => ({ featureId })) },
+          retryAuth: true,
+          ...options,
+        });
+        if (!isObject(json)) {
+          throw new LightwaveError('bad_response', 'the feature values are not an object');
+        }
+        for (const id of chunk) {
+          const value = json[id];
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            values.set(id, value);
+          }
+        }
+        ok += 1;
+      } catch (err) {
+        if (!(err instanceof LightwaveError) || !BATCH_LOCAL.has(err.kind)) {
+          throw err;
+        }
+        first ??= err;
+        for (const id of chunk) {
+          failed.add(id);
         }
       }
     }
-    return values;
+    if (ok === 0 && first) {
+      throw first;
+    }
+    return { values, failed };
   }
 
   /** The value of one feature. */
@@ -246,8 +306,12 @@ export class LightwaveClient {
     return value;
   }
 
-  /** Writes one feature (a command): never a renewal, sent once. */
-  writeFeature(id, value, options = {}) {
+  /**
+   * Writes one feature (a command): never a renewal, sent once; a
+   * `protective` one ("off", 5 °C) renews a missing token and sends again
+   * once on a 401.
+   */
+  writeFeature(id, value, { protective = false, ...options } = {}) {
     if (!validId(id)) {
       return Promise.reject(
         new LightwaveError('bad_response', 'invalid feature id', { notSent: true }),
@@ -256,7 +320,8 @@ export class LightwaveClient {
     return this.api(PATHS.feature(id), {
       method: 'POST',
       json: { value },
-      allowRefresh: false,
+      allowRefresh: protective,
+      retryAuth: protective,
       ...options,
     });
   }

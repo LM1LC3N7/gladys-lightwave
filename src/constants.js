@@ -79,8 +79,14 @@ export const LIMITS = {
   structures: 10,
   /** Feature sets (Gladys devices) published (Gladys accepts 2000 per publication). */
   devices: 500,
+  /** Feature sets read from one structure answer (hub, blinds and LEDs included). */
+  setsPerStructure: 2000,
   /** Features read per `features/read` request (lightwave2: 150). */
   featuresPerRead: 150,
+  /** `features/read` requests per cycle at most (1 500 features). */
+  readBatches: 10,
+  /** Warnings ("off not applied"…) shown in the status at most. */
+  warnings: 3,
   /** Longest text kept from an answer (names, product codes). */
   textLength: 100,
   /** Longest identifier accepted from an answer (feature set and feature ids). */
@@ -133,4 +139,18 @@ export const TIMINGS = {
   testCooldown: 30 * SECOND,
   /** The time of a read attempt is written to /data at most this often. */
   attemptWriteInterval: MINUTE,
+  /**
+   * A bearer token younger than this that the API refuses (401) is not
+   * renewed again: the account has no access to the API, renewing would only
+   * spend refresh tokens.
+   */
+  freshToken: 10 * MINUTE,
+  /** The API refusing a fresh bearer token: new tries doubled from 2 min to 1 h, a stop at the 3rd. */
+  apiRefusedBase: 2 * MINUTE,
+  apiRefusedMax: HOUR,
+  apiRefusedStop: 3,
+  /** An "off" (or 5 °C) a read contradicts is sent again this many times at most. */
+  protectiveResends: 3,
+  /** Values older than this (or twice the interval) are never published again. */
+  staleAge: 10 * MINUTE,
 };

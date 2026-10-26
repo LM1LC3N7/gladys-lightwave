@@ -91,9 +91,11 @@ const temperatureSpec = () =>
   });
 
 /**
- * The target temperature: written only when the configuration allows the
- * heating commands, within 5 °C and the ceiling of the configuration (40 °C
- * at most, Lightwave's own limit).
+ * The target temperature: 5 °C (the frost floor) is the protective command
+ * of a radiator valve, which has no off: accepted without the option. Any
+ * other target only when the configuration allows the heating commands,
+ * within 5 °C and the ceiling of the configuration (40 °C at most,
+ * Lightwave's own limit); refused out of bounds, never clamped.
  */
 const setpointSpec = () =>
   spec('setpoint', 'setpoint', C.THERMOSTAT, T.THERMOSTAT.TARGET_TEMPERATURE, {
@@ -101,9 +103,13 @@ const setpointSpec = () =>
     min: SETPOINT.min,
     max: SETPOINT.max,
     read: (v) => tenths(v[F.TARGET_TEMPERATURE]),
+    protective: (v) => v === SETPOINT.min,
     write: (v, _values, config) => {
       if (!Number.isFinite(v)) {
         return { refuse: 'invalidValue' };
+      }
+      if (v === SETPOINT.min) {
+        return { writes: [{ type: F.TARGET_TEMPERATURE, value: SETPOINT.min * 10 }] };
       }
       if (!config.allowHeating) {
         return { refuse: 'heatingDisabled' };
@@ -119,7 +125,7 @@ const setpointSpec = () =>
     },
   });
 
-/** Off (always allowed: the protective command) or heating (with the option). */
+/** Off (the protective command, without the option) or heating (with the option). */
 const modeSpec = (language) =>
   spec('mode', 'mode', C.THERMOSTAT, T.THERMOSTAT.MODE, {
     min: MODE.OFF,
@@ -143,7 +149,7 @@ const modeSpec = (language) =>
     },
   });
 
-/** Whether the device is heating now: the valve open, or a call for heat. */
+/** Whether the device is heating now: `valveLevel` above 0 (to confirm on a real valve), or a call for heat. */
 const operatingSpec = (set) =>
   spec('heating', 'heating', C.THERMOSTAT, T.THERMOSTAT.OPERATING_STATE, {
     min: OPERATING.IDLE,
@@ -243,6 +249,18 @@ export function planOf(set, kind, language = 'en') {
   }
   specs.push(...extraSpecs(set));
   return specs.length === 0 ? undefined : { kind, specs };
+}
+
+/**
+ * The protective specs of a set known only by the ids kept in /data (after
+ * a restart, before the first read): the mode ("off") when it has a
+ * `heatState`, the setpoint (5 °C) when it has a `targetTemperature`.
+ */
+export function protectiveSpecs(features, language = 'en') {
+  const specs = [];
+  if (features?.[F.TARGET_TEMPERATURE]) specs.push(setpointSpec());
+  if (features?.[F.HEAT_STATE]) specs.push(modeSpec(language));
+  return specs;
 }
 
 export const deviceIds = (gladys, id) => gladys.externalIds('device', id);
