@@ -18,6 +18,7 @@ test('normalizeMemory: repaired, pause capped, stop with its fingerprint, attemp
     pause: null,
     block: null,
     protect: {},
+    protectAccount: null,
     lastAttemptAt: undefined,
   });
   const memory = normalizeMemory(

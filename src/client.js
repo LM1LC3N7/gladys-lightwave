@@ -210,12 +210,25 @@ export class LightwaveClient {
     if (error) {
       throw error;
     }
+    // The API took this bearer token once: a later 401 is a revocation (one
+    // renewal), never an account without access.
+    const ok = this.session === used ? used : this.session;
+    if (ok) {
+      ok.accepted = true;
+    }
     return parseJson(answer.body);
   }
 
-  /** Whether a session was issued less than `freshToken` ago (monotonic). */
+  /**
+   * Whether a session was issued less than `freshToken` ago (monotonic) and
+   * never accepted by the API: a 401 on it means no access to the API.
+   */
   isFresh(session) {
-    return Boolean(session) && this.monotonic() - session.issuedMono < TIMINGS.freshToken;
+    return (
+      Boolean(session) &&
+      !session.accepted &&
+      this.monotonic() - session.issuedMono < TIMINGS.freshToken
+    );
   }
 
   /** The ids of the structures (homes) of the account. */

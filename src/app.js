@@ -196,6 +196,10 @@ export class LightwaveApp {
     this.spent = new Set();
     /** The number of structures not read in the last cycle. */
     this.partial = 0;
+    /** Where the next cycle starts reading, beyond 1 500 features. */
+    this.readCursor = 0;
+    /** When the token endpoint last answered unexpectedly a protective command (monotonic). */
+    this.tokenRejectedAt = undefined;
   }
 
   // --- Lifecycle -------------------------------------------------------------
@@ -706,8 +710,27 @@ export class LightwaveApp {
 
   /** The values of the features of the shown sets read this cycle (the stale ones keep their old values). */
   async readValues(sets) {
-    const fresh = new Map([...sets].filter(([id]) => !this.stale.has(id)));
-    const ids = featureIdsOf(fresh, READ_TYPES);
+    const fresh = [...sets].filter(([id]) => !this.stale.has(id));
+    // Beyond what one cycle reads (1 500 features), each cycle starts where
+    // the previous one stopped: every device is read in turn.
+    const all = featureIdsOf(new Map(fresh), READ_TYPES);
+    const limit = LIMITS.featuresPerRead * LIMITS.readBatches;
+    let ids = all;
+    if (all.length > limit) {
+      const start = this.readCursor % fresh.length;
+      const turned = new Map([...fresh.slice(start), ...fresh.slice(0, start)]);
+      ids = featureIdsOf(turned, READ_TYPES);
+      let count = 0;
+      let used = 0;
+      for (const set of turned.values()) {
+        used += featureIdsOf(new Map([[set.id, set]]), READ_TYPES).length;
+        if (used > limit) {
+          break;
+        }
+        count += 1;
+      }
+      this.readCursor = start + Math.max(1, count);
+    }
     return ids.length === 0
       ? { values: new Map(), failed: new Set() }
       : this.client.readFeatures(ids);
@@ -775,6 +798,10 @@ export class LightwaveApp {
   /** The protective writers of the heating sets kept in /data. */
   buildProtective() {
     this.protective = new Map();
+    if (this.memory.protectAccount !== this.config.account) {
+      // The ids of another account are never used with this one.
+      return;
+    }
     for (const [setId, features] of Object.entries(this.memory.protect ?? {})) {
       const ids = deviceIds(this.gladys, setId);
       for (const spec of protectiveSpecs(features, this.config.language)) {
@@ -783,8 +810,16 @@ export class LightwaveApp {
     }
   }
 
-  /** The feature ids of the heating sets of the last read, kept in /data when they change. */
+  /**
+   * The feature ids of the heating sets, kept in /data when they change: the
+   * heating sets of the last read, plus the ones kept before whose device is
+   * still in Gladys (an empty or partial answer never wipes them), 500 at
+   * most, for this account only.
+   */
   async keepProtective() {
+    if (this.sets.size === 0) {
+      return;
+    }
     const protect = {};
     for (const [id, plan] of this.plans) {
       if (plan.kind !== 'climate') {
@@ -801,8 +836,23 @@ export class LightwaveApp {
         protect[id] = kept;
       }
     }
-    if (JSON.stringify(protect) !== JSON.stringify(this.memory.protect ?? {})) {
+    if (this.memory.protectAccount === this.config.account) {
+      const created = this.createdDevices();
+      for (const [id, kept] of Object.entries(this.memory.protect ?? {})) {
+        if (!(id in protect) && created.has(deviceIds(this.gladys, id).device)) {
+          protect[id] = kept;
+        }
+      }
+    }
+    for (const id of Object.keys(protect).slice(LIMITS.devices)) {
+      delete protect[id];
+    }
+    if (
+      JSON.stringify(protect) !== JSON.stringify(this.memory.protect ?? {}) ||
+      this.memory.protectAccount !== this.config.account
+    ) {
       this.memory.protect = protect;
+      this.memory.protectAccount = this.config.account;
       this.buildProtective();
       await this.saveMemory();
     }
@@ -1178,6 +1228,15 @@ export class LightwaveApp {
    */
   async protect(writer, number, received, generation) {
     const { setId, spec, features } = writer;
+    const mono = this.monotonic();
+    if (
+      this.tokenRejectedAt !== undefined &&
+      mono - this.tokenRejectedAt < TIMINGS.tokenRetryProtective &&
+      this.client.needsRenewal()
+    ) {
+      // The token endpoint answered unexpectedly a moment ago: once a minute at most.
+      throw this.error(ERRORS.tokenEndpointWait);
+    }
     const set = this.sets.get(setId) ?? { id: setId, features };
     const payload = spec.write(number, this.values.get(setId) ?? {}, this.config);
     if (payload.refuse) {
@@ -1310,6 +1369,9 @@ export class LightwaveApp {
           },
           async (err) => {
             this.logger.warn(`Lightwave command failed: ${errorReason(err)}`);
+            if (generation === this.generation) {
+              await this.tokenFailure(err);
+            }
             if (generation === this.generation && err.kind === 'rate_limited') {
               await this.pauseAll(err);
               await this.setStatus(this.connectedOnce, this.pauseMessage());
@@ -1467,8 +1529,12 @@ export class LightwaveApp {
             this.confirm(setId, writes, true, this.monotonic());
           }
         },
-        (err) =>
-          this.logger.warn(`Lightwave: protective command not sent again: ${errorReason(err)}`),
+        async (err) => {
+          this.logger.warn(`Lightwave: protective command not sent again: ${errorReason(err)}`);
+          if (generation === this.generation) {
+            await this.tokenFailure(err);
+          }
+        },
       )
       .finally(() => {
         if (generation === this.generation) {
@@ -1568,12 +1634,31 @@ export class LightwaveApp {
     }
   }
 
+  /**
+   * A refusal of the token endpoint met by a protective command (its own
+   * renewal): kept as the cycle keeps it. Refused tokens: the persisted
+   * stop, no request until new tokens. An unexpected answer: the stop until
+   * a click, and the protective commands ask again once a minute at most.
+   */
+  async tokenFailure(err) {
+    if (!(err instanceof LightwaveError)) {
+      return;
+    }
+    if (err.kind === 'token_rejected') {
+      this.tokenRejectedAt = this.monotonic();
+    }
+    if ((err.kind === 'refused' || err.kind === 'token_rejected') && this.blocked !== 'refused') {
+      await this.failed(err);
+    }
+  }
+
   async commandFailure(err, setId, sent) {
     if (!(err instanceof LightwaveError)) {
       return err;
     }
     const reason = errorReason(err);
     this.logger.warn(`Lightwave command not done: ${reason}`);
+    await this.tokenFailure(err);
     switch (err.kind) {
       case 'rate_limited':
         await this.pauseAll(err);
@@ -1584,6 +1669,8 @@ export class LightwaveApp {
         return this.error(err.notSent || !sent ? ERRORS.blocked : ERRORS.refused(reason));
       case 'refused':
         return this.error(ERRORS.tokensRefused);
+      case 'token_rejected':
+        return this.error(ERRORS.blocked);
       case 'timeout':
       case 'network':
         if (err.notSent && !sent) {

@@ -32,7 +32,10 @@ the notes of the version's GitHub Release.
   grouped; 500 devices and 10 read requests per cycle at most; stale values
   never published again; an API refusing fresh bearer tokens stops without
   spending refresh tokens; an unexpected answer of the token endpoint no
-  longer counts as refused tokens.
+  longer counts as refused tokens; a refusal met by a protective command
+  is kept like one met by a read (review r2); a bearer token the API has
+  accepted once is renewed on a 401; heating ids bound to the account and
+  never wiped by an empty answer; beyond 1 500 features the reads rotate.
 - Commands serialized per device within Gladys' 5 s and read again after;
   401/403/429/5xx handling with persisted stops and pauses; badges; the
   "Test the connection" button; docs en/fr; cover.

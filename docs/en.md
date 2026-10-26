@@ -59,7 +59,10 @@ heating sends them again (3 times at most) and the status says so.
 
 They can still fail, and Gladys then shows the cause:
 
-- the tokens were refused by Lightwave (no token to send them with);
+- the tokens were refused by Lightwave (no token to send them with; a
+  refusal met by the "off" itself stops the integration as a read would);
+- the token endpoint answered unexpectedly less than a minute ago (it is
+  asked again once a minute at most);
 - the device was never read by this integration (no identifier kept);
 - the token endpoint or the API does not answer, or refuses (401 on a token
   just issued, 403, 404, 429 on the write itself);
@@ -102,7 +105,8 @@ the new token is lost and the status asks for another one.
 ## Refresh
 
 The feature values are read every **60 seconds** by default (30 to 300,
-_Refresh interval_), one request per 150 features, 10 requests at most; the
+_Refresh interval_), one request per 150 features, 10 requests at most
+(beyond, each cycle goes on where the previous one stopped); the
 hierarchy (the homes of the account and their devices) is read **once an
 hour**, one request per home plus one for the list. A home that fails to be
 read keeps its last devices, marked "unreachable", with their last values not
@@ -172,7 +176,8 @@ The integration keeps in `/data/lightwave-state.json` (readable by its own
 container only): a random salt, the end of a pause, the time of the last read
 attempt, a stop on refused tokens tied to a salted fingerprint of the two
 tokens, and the Lightwave identifiers of the mode and target features of the
-heating devices (to turn them off after a restart). Never a token: the bearer
+heating devices of the account (to turn them off after a restart; never
+used with another account, kept while the device is in Gladys). Never a token: the bearer
 token lives in memory, the refresh token in the Gladys configuration. The
 device and feature ids of Lightwave are the identifiers of the Gladys
 devices. Nothing is sent anywhere but to Lightwave.

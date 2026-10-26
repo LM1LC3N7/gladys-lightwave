@@ -64,7 +64,11 @@ en chauffe les renvoie (3 fois au plus) et le statut le dit.
 
 Elles peuvent quand même échouer, et Gladys en affiche alors la cause :
 
-- les jetons ont été refusés par Lightwave (aucun jeton pour les envoyer) ;
+- les jetons ont été refusés par Lightwave (aucun jeton pour les envoyer ; un
+  refus reçu par l'« arrêt » lui-même arrête l'intégration comme le ferait
+  une lecture) ;
+- le point de jeton a répondu de façon inattendue il y a moins d'une minute
+  (il est redemandé une fois par minute au plus) ;
 - l'appareil n'a jamais été lu par cette intégration (aucun identifiant
   gardé) ;
 - le point de jeton ou l'API ne répond pas, ou refuse (401 sur un jeton tout
@@ -112,7 +116,8 @@ normal, sinon le nouveau jeton est perdu et le statut en demande un autre.
 
 Les valeurs des fonctionnalités sont lues toutes les **60 secondes** par
 défaut (30 à 300, _Intervalle de rafraîchissement_), une requête par 150
-fonctionnalités, 10 requêtes au plus ; la hiérarchie (les maisons du compte
+fonctionnalités, 10 requêtes au plus (au-delà, chaque cycle reprend là où
+le précédent s'est arrêté) ; la hiérarchie (les maisons du compte
 et leurs appareils) est lue **une fois par heure**, une requête par maison
 plus une pour la liste. Une maison dont la lecture échoue garde ses derniers
 appareils, marqués « injoignables », leurs dernières valeurs n'étant pas
@@ -189,8 +194,9 @@ L'intégration garde dans `/data/lightwave-state.json` (lisible par son seul
 conteneur) : un sel aléatoire, la fin d'une pause, l'heure de la dernière
 tentative de lecture, un arrêt sur jetons refusés lié à une empreinte salée
 des deux jetons, et les identifiants Lightwave des fonctionnalités de mode et
-de consigne des appareils de chauffage (pour les couper après un
-redémarrage). Jamais un jeton : le jeton porteur vit en mémoire, le jeton de
+de consigne des appareils de chauffage du compte (pour les couper après un
+redémarrage ; jamais utilisés avec un autre compte, gardés tant que
+l'appareil est dans Gladys). Jamais un jeton : le jeton porteur vit en mémoire, le jeton de
 rafraîchissement dans la configuration de Gladys. Les identifiants Lightwave
 des appareils et des fonctionnalités sont les identifiants des appareils
 Gladys. Rien n'est envoyé ailleurs qu'à Lightwave.

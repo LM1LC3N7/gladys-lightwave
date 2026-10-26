@@ -323,3 +323,122 @@ test('a structure id or feature id made of dots never reaches a path', async () 
   assert.ok(!s.server.requests.some((r) => r.path.includes('..')));
   await save(s, {});
 });
+
+// --- Review r2 ---------------------------------------------------------------
+
+test('r2-1: refused tokens met by "off" during a 429 pause: kept, 6 offs = 1 token request', async () => {
+  const s = await setup();
+  s.server.queue.push({
+    match: (r) => r.path === '/v1/features/read',
+    status: 429,
+    body: '',
+    headers: { 'retry-after': '21600' },
+  });
+  await s.wait(MINUTE);
+  // The refresh token is spent meanwhile (pasted again, refused by Lightwave).
+  s.server.refreshTokens.clear();
+  const again = await restart(s, 5 * SECOND, {
+    refresh_token: 'spent-token',
+    refresh_token_state: undefined,
+  });
+  const tokens = again.server.tokens().length;
+  for (let i = 0; i < 6; i += 1) {
+    const result = await command(again, SETS.boiler, 'mode', 0);
+    assert.match(result.error, /Lightwave refused the tokens/);
+    await again.wait(MINUTE);
+  }
+  assert.equal(again.server.tokens().length, tokens + 1, 'one token request for 6 offs');
+  assert.equal(again.store.data.block.kind, 'refused');
+  assert.match(status(again).message.en, /refused the API token or the refresh token/);
+});
+
+test('r2-1: an unexpected answer of the token endpoint met by "off": once a minute at most', async () => {
+  const s = await setup();
+  s.server.queue.push({
+    match: (r) => r.path === '/v1/features/read',
+    status: 429,
+    body: '',
+    headers: { 'retry-after': '21600' },
+  });
+  await s.wait(MINUTE);
+  const again = await restart(s, 5 * SECOND);
+  for (let i = 0; i < 3; i += 1) {
+    again.server.queue.push({
+      match: (r) => r.host === 'auth.lightwaverf.com',
+      status: 403,
+      body: '<html>Access denied (edge)</html>',
+    });
+  }
+  const tokens = again.server.tokens().length;
+  for (let i = 0; i < 6; i += 1) {
+    await command(again, SETS.boiler, 'mode', 0);
+    await again.wait(10 * SECOND);
+  }
+  assert.ok(
+    again.server.tokens().length - tokens <= 2,
+    `${again.server.tokens().length - tokens} requests in 1 min`,
+  );
+  assert.match(
+    status(again).message.en,
+    /Unexpected answer of the Lightwave token endpoint \(HTTP 403\)/,
+  );
+  assert.equal(again.store.data.block, null, 'not a persisted stop: the tokens may be good');
+});
+
+test('r2-2: a bearer token the API accepted, revoked a minute later: renewed, "off" sent again', async () => {
+  const s = await setup();
+  await s.wait(MINUTE);
+  s.server.revokeBearers();
+  const tokens = s.server.tokens().length;
+  assert.deepEqual(await command(s, SETS.boiler, 'mode', 0), { success: true });
+  assert.equal(s.server.tokens().length, tokens + 1);
+  assert.equal(s.server.values[HEAT], 0);
+  await s.wait(MINUTE);
+  assert.equal(status(s).connected, true);
+});
+
+test('r2-3: the heating ids of another account are never used', async () => {
+  const s = await setup();
+  s.server.apiToken = 'other-token';
+  s.server.refreshTokens.add('other-refresh');
+  const again = await restart(s, 5 * SECOND, {
+    api_token: 'other-token',
+    refresh_token: 'other-refresh',
+    refresh_token_state: undefined,
+  });
+  const writes = again.server.writes().length;
+  const result = await command(again, SETS.boiler, 'mode', 0);
+  assert.match(result.error, /not been read yet since the start/);
+  assert.equal(again.server.writes().length, writes);
+});
+
+test('r2-4: an empty list of structures does not wipe the heating ids', async () => {
+  const s = await setup();
+  s.server.structures = {};
+  await s.wait(HOUR + MINUTE);
+  assert.ok(s.store.data.protect[SETS.boiler], 'still kept');
+  const again = await restart(s, 5 * SECOND);
+  assert.deepEqual(await command(again, SETS.boiler, 'mode', 0), { success: true });
+});
+
+test('r2-5: beyond 1 500 features, every device is read in turn', async () => {
+  const server = fakeLightwave();
+  const featureSets = [];
+  for (let i = 0; i < 500; i += 1) {
+    const features = [
+      'temperature',
+      'targetTemperature',
+      'valveLevel',
+      'valveSetup',
+      'batteryLevel',
+    ].map((type, k) => ({ featureId: `v-${i}-${k}`, type }));
+    for (const f of features)
+      server.values[f.featureId] = f.type === 'targetTemperature' ? 200 : 50;
+    featureSets.push({ featureSetId: `valve-${i}`, name: `Valve ${i}`, features });
+  }
+  server.structures = { big: { devices: [{ productCode: 'LW922', featureSets }] } };
+  const s = await setup({ server, create: false });
+  await s.wait(3 * MINUTE);
+  assert.equal(s.app.readAt.size, 500, 'every valve read at least once');
+  assert.ok(s.server.reads().length <= 40);
+});

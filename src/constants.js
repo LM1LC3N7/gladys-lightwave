@@ -149,6 +149,8 @@ export const TIMINGS = {
   apiRefusedBase: 2 * MINUTE,
   apiRefusedMax: HOUR,
   apiRefusedStop: 3,
+  /** After an unexpected answer of the token endpoint, a protective command asks it again at most this often. */
+  tokenRetryProtective: MINUTE,
   /** An "off" (or 5 °C) a read contradicts is sent again this many times at most. */
   protectiveResends: 3,
   /** Values older than this (or twice the interval) are never published again. */

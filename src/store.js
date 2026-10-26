@@ -141,6 +141,8 @@ export function normalizeMemory(raw, now = Date.now()) {
         ? { kind: block.kind, fingerprint: block.fingerprint }
         : null,
     protect: normalizeProtect(raw?.protect),
+    /** The account (hash of the API token) the heating ids belong to. */
+    protectAccount: /^[0-9a-f]{16}$/.test(raw?.protectAccount ?? '') ? raw.protectAccount : null,
     lastAttemptAt:
       time(raw?.lastAttemptAt) === undefined ? undefined : Math.min(raw.lastAttemptAt, now),
   };

@@ -36,6 +36,12 @@ up to date at the end of every milestone.
       values not republished; getConfig fallback; grouped rereads; batch
       isolation; monotonic publisher window; safer ids; one internal key with
       a hashed seed; docs without false absolutes.
+- [x] **Milestone 1 fixes — review r2** (2026-10-26): a token refusal met
+      by a protective command kept (persisted stop; an unexpected answer:
+      the token endpoint asked again once a minute at most); sessions
+      accepted once by the API renewed on a 401; heating ids in /data bound
+      to the account, never wiped by an empty answer; reads rotate beyond
+      1 500 features.
 - [ ] **Milestone 2 — real account**: run against a real account (see "To
       check on a real account"), turn the answers (anonymized) into fixtures,
       fix what differs.
