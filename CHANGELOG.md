@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
 ### Added
 
 - The Lightwave public API with the API token and the refresh token of the
@@ -43,4 +45,5 @@ the notes of the version's GitHub Release.
   401/403/429/5xx handling with persisted stops and pauses; badges; the
   "Test the connection" button; docs en/fr; cover.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-lightwave/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-lightwave/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-lightwave/releases/tag/v0.1.1

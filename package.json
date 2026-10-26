@@ -1,6 +1,6 @@
 {
   "name": "gladys-lightwave",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Lightwave Smart lights, dimmers, sockets, relays, sensors and radiator valves (UK) for Gladys Assistant through the Lightwave public API: on/off, brightness, temperatures, heating behind an option.",
   "type": "module",
