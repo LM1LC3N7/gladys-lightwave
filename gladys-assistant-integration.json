@@ -1,177 +1,161 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Lightwave Smart",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Lightwave Smart lights, sockets, sensors and radiator valves (UK) via the Lightwave cloud API.",
+    "fr": "Lumières, prises, capteurs et vannes de radiateur Lightwave Smart (UK) par le cloud Lightwave."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-lightwave:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-lightwave/main/cover.png",
+  "categories": ["lighting", "climate", "energy"],
+  "transports": ["cloud"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Lightwave account",
+        "fr": "Votre compte Lightwave"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Shows the Lightwave Smart devices of your account (Link Plus hub, generations 1 and 2) in Gladys: lights and dimmers, sockets and relays (on/off), radiator valves and thermostats (temperature, target, mode, heating state), window and movement sensors, battery, power in watts. Open the \"API\" page of my.lightwaverf.com, create an API token and a refresh token, paste them here and save, then add the devices from the Discovery tab. Read every 60 seconds; the heating commands are off until you allow them below. Public API of Lightwave, never tested with a real account. Not affiliated with Lightwave.",
+        "fr": "Affiche dans Gladys les appareils Lightwave Smart de votre compte (hub Link Plus, générations 1 et 2) : lumières et variateurs, prises et relais (marche/arrêt), vannes de radiateur et thermostats (température, consigne, mode, état de chauffe), capteurs de fenêtre et de mouvement, batterie, puissance en watts. Ouvrez la page « API » de my.lightwaverf.com, créez un jeton d'API et un jeton de rafraîchissement, collez-les ici et enregistrez, puis ajoutez les appareils depuis l'onglet Découverte. Lecture toutes les 60 secondes ; les commandes de chauffage sont désactivées tant que vous ne les autorisez pas ci-dessous. API publique de Lightwave, jamais testée avec un vrai compte. Sans lien avec Lightwave."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-lightwave/blob/main/docs/fr.md",
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-lightwave/blob/main/docs/en.md",
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "api_token",
+      "type": "secret",
+      "label": {
+        "en": "API token",
+        "fr": "Jeton d'API"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "The \"API token\" (basic) of the API page of my.lightwaverf.com. Kept by Gladys in its database, never shown again, sent only to Lightwave (auth.lightwaverf.com).",
+        "fr": "Le « jeton d'API » (basic) de la page API de my.lightwaverf.com. Gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à Lightwave (auth.lightwaverf.com)."
+      },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "refresh_token",
+      "type": "secret",
+      "label": {
+        "en": "Refresh token",
+        "fr": "Jeton de rafraîchissement"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "The \"refresh token\" of the same page. It is used once: Lightwave then gives a new one at each renewal, which the integration keeps in the Gladys configuration by itself. Paste a new one only if the status asks for it.",
+        "fr": "Le « jeton de rafraîchissement » de la même page. Il ne sert qu'une fois : Lightwave en donne ensuite un nouveau à chaque renouvellement, que l'intégration garde elle-même dans la configuration de Gladys. Collez-en un nouveau seulement si le statut le demande."
+      },
+      "required": true
     },
     {
-      "key": "unit",
+      "key": "poll_interval",
+      "type": "number",
+      "label": {
+        "en": "Refresh interval (s)",
+        "fr": "Intervalle de rafraîchissement (s)"
+      },
+      "description": {
+        "en": "Seconds between two reads of the devices (30 to 300): one request per 150 features each time, plus one per home every hour.",
+        "fr": "Secondes entre deux lectures des appareils (30 à 300) : une requête par 150 fonctionnalités à chaque fois, plus une par maison toutes les heures."
+      },
+      "required": false,
+      "default": 60,
+      "min": 30,
+      "max": 300
+    },
+    {
+      "key": "allow_heating",
+      "type": "boolean",
+      "label": {
+        "en": "Allow the heating commands",
+        "fr": "Autoriser les commandes de chauffage"
+      },
+      "description": {
+        "en": "Off by default: the target temperature and the \"heating\" mode of the radiator valves and thermostats are refused. Setting a thermostat to \"off\" is always accepted.",
+        "fr": "Désactivé par défaut : la température de consigne et le mode « chauffage » des vannes de radiateur et thermostats sont refusés. Mettre un thermostat à « arrêt » est toujours accepté."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "max_setpoint",
+      "type": "number",
+      "label": {
+        "en": "Highest target temperature (°C)",
+        "fr": "Température de consigne maximale (°C)"
+      },
+      "description": {
+        "en": "A target above it is refused (5 to 40 °C, 25 by default; Lightwave accepts up to 40).",
+        "fr": "Une consigne au-dessus est refusée (5 à 40 °C, 25 par défaut ; Lightwave accepte jusqu'à 40)."
+      },
+      "required": false,
+      "default": 25,
+      "min": 5,
+      "max": 40
+    },
+    {
+      "key": "language",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
-      "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
-      ]
-    },
-    {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms des fonctionnalités"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Used for the feature names of the devices added from now on, and for the command errors.",
+        "fr": "Sert aux noms des fonctionnalités des appareils ajoutés désormais, et aux erreurs des commandes."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français"
+          }
+        },
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion"
       },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
       "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
+        "en": "Renews the bearer token if needed and reads the devices once (never sooner than the interval after the last read). Also tries again after a rejected token request.",
+        "fr": "Renouvelle le jeton si besoin et lit une fois les appareils (jamais plus tôt que l'intervalle après la dernière lecture). Réessaie aussi après une demande de jeton rejetée."
       },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "timeout_seconds": 60
     }
   ]
 }

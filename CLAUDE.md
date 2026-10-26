@@ -1,76 +1,95 @@
 # CLAUDE.md
 
-Project rules for coding assistants (Claude Code reads this file) and for human
-contributors.
+Project rules for coding assistants (Claude Code reads this file) and for
+human contributors. Read **[TODO.md](./TODO.md) first**: status, decisions
+already taken and the next milestones.
 
 ## What this is
 
-A Gladys Assistant **external integration**: a Node.js service (Node 22+, ESM,
-no build step) that runs in its own sandboxed Docker container and talks to
-Gladys through
-[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
-its only runtime dependency. It started from the official JavaScript template.
+A Gladys Assistant **external integration** of type `device`: a Node.js
+service (Node 22+, ESM, no build step) in its own sandboxed Docker container,
+talking to Gladys through `@gladysassistant/integration-sdk` (v0.15), its only
+runtime dependency (HTTPS goes through `node:https`). It uses the **public API
+of Lightwave** (`publicapi.lightwaverf.com`) with the API token and the
+refresh token of the "API" page of my.lightwaverf.com, reads the hierarchy
+once an hour and the feature values every cycle, and shows and commands
+lights, sockets, radiator valves, thermostats and sensors. Ported from
+lightwave2's `LWLink2Public` (MIT). Never tested with a real account, not
+affiliated with Lightwave.
 
 ## Commands
 
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+node --test test/app.test.js              # one file
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
-npx github:GladysAssistant/integration-store .   # store admission checks
+npm run audit                             # npm audit --omit=dev
+gi ci                                     # the whole CI locally (Node 24 + 22, Docker, store validator)
 ```
 
-The CI (`.github/workflows/ci.yml`) runs `format:check`, `lint` and `test` on
-Node 22 and 24, and builds the Docker image: run the three commands before
-pushing.
+Run `gi ci` and `audit` before every commit.
 
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
-.github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
+index.js            SDK bootstrap only
+src/handlers.js     every SDK handler -> the app (shared with the tests)
+src/app.js          LightwaveApp: cycle and its timer (monotonic), failures, stops and
+                    pauses, devices, states, commands (queue, deadlines, holds), badges, button
+src/client.js       the account: the bearer token, the refresh token rotation, the API calls
+src/http.js         the only network access (node:https, bounded), errors
+src/model.js        structure -> feature sets, kinds (pure)
+src/devices.js      feature set -> Gladys features, reads, writes of a command (pure)
+src/publisher.js    states within 300/min
+src/store.js        /data/lightwave-state.json: salt, pause, stop on refused tokens, last attempt
+src/config.js       config_schema normalized, the current refresh token, account key
+src/constants.js    hosts, paths, feature names, manifest keys, limits, timings
+src/i18n.js         runtime texts and feature names (en/fr), command errors
+test/fixtures/      structures and values shaped like the public API
+test/helpers/       a fake Lightwave behind the transport, a virtual clock; Gladys is the SDK's fake
+scripts/cover.mjs   the cover, plain Node
 ```
 
 ## Rules
 
-- **External ids are forever.** Build them with
-  `gladys.externalIds(type, platformId)`, `platformId` being the unique id the
-  platform gives the device (serial, cloud id, MAC), never a label. Gladys keys
-  devices, their history, scenes and dashboards on them: changing one creates a
-  new device and orphans the old one. The same goes for every key users store:
-  manifest `config_schema`, `actions`, widget and scene keys, feature keys.
-- **The container rootfs is read-only.** Write only under `/data`, the one
-  writable volume. Never log tokens, passwords or API keys.
-- **Versions belong to the Release workflow** (Actions → Release). Never edit
-  `version` in `package.json` or in the manifest, nor the `docker_image` tag,
-  by hand — except on the README's hand-pushed tag path, which bumps all three
-  together before tagging. `test/manifest.test.js` checks they agree.
-- **Changelog.** Every user-visible change adds a line under `## [Unreleased]`
-  in `CHANGELOG.md` (`### Added`, `Changed`, `Fixed`, `Removed`, `Security`).
-  Never write a version heading: the Release workflow moves the section, and it
-  becomes the notes of the GitHub Release.
-- **Manifest.** Texts are multi-language objects `{ "en": ..., "fr": ... }`:
-  `label`, `description` and `placeholder` alike, never a plain string. The
-  catalog `description` holds 10 to 100 characters per language. A field the
-  older cores do not know needs a higher `gladys_version` minimum
-  (`categories`: 4.86.0; `widgets`, `scene_triggers`, `scene_actions`,
-  `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
-  code (defaults, action, scene and widget handlers): change both sides
-  together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
-- **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
-  in English. Tests never touch the network.
+- **External ids are forever**: device `device:<featureSetId>`, features
+  `power`, `brightness`, `temperature`, `setpoint`, `mode`, `heating`,
+  `watts`, `battery`, `opening`, `motion`, `humidity`. Never change how they
+  are built; the kind of a set comes from its Lightwave features.
+- Manifest keys (`api_token`, `refresh_token`, `poll_interval`,
+  `allow_heating`, `max_setpoint`, `language`, the action `test_connection`)
+  and the internal keys `refresh_token_seed` / `refresh_token_current` are
+  frozen. Never a key prefixed `gladys_`.
+- **Public API only**: never the sign-in of the Lightwave app (e-mail,
+  password, app identifier header), never a User-Agent of an app.
+- **Tokens**: never in `/data`, the logs, a status or an error; the bearer
+  token in memory, the refresh tokens in the Gladys configuration. Never a
+  renewal from a command, at most one per cycle, never after a refusal.
+- **Heating**: the target temperature and mode "heating" behind
+  `allow_heating` (off by default), the target bounded to 5 °C and
+  `max_setpoint` (40 at most), the option read right before the send; mode
+  "off" is never held back by a pause, a backoff or the queue.
+- **Commands**: one at a time per device, refused before they are sent when
+  they cannot be answered within Gladys' 5 s, sent once (never retried).
+- **Clock**: one read of the monotonic clock per decision (`dueAt(mono)`),
+  never a read sooner than the interval (restart, button, reconnection
+  included); the wall clock dates `/data` only. Keep the test clock that
+  moves at every read and the real-clock test.
+- Polling politely: the hierarchy once an hour, the values every 30 to 300 s,
+  never sooner after an error; 429 pauses every path but "off". Never add a
+  call outside `LightwaveClient`.
+- The Discovery list never shrinks; status and Discovery are sent again at
+  every `connected`; a reconnection keeps the tokens, the stops and the pauses.
+- Units only from the core's `DEVICE_FEATURE_UNITS_BY_CATEGORY`;
+  `supported_options[].label` is a string; a `secret` field is kept by
+  Gladys in its database, in clear: never claim more protection than that.
+- Files are UTF-8 without BOM (`test/encoding.test.js`); tests never touch
+  the network nor the system temp directory (except the store test's own
+  temporary directory).
+- Code, comments, README in English; `docs/en.md` and `docs/fr.md` kept in sync.
+- Every user-visible change adds a line under `## [Unreleased]` in
+  `CHANGELOG.md`; versions belong to the Release workflow (0.1.0 was set by
+  hand once, see TODO.md).

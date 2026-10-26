@@ -1,8 +1,8 @@
 {
-  "name": "gladys-integration-template-js",
-  "version": "1.0.0",
+  "name": "gladys-lightwave",
+  "version": "0.1.0",
   "private": true,
-  "description": "Official starter template to build an external integration for Gladys Assistant with the JavaScript SDK.",
+  "description": "Lightwave Smart lights, dimmers, sockets, relays, sensors and radiator valves (UK) for Gladys Assistant through the Lightwave public API: on/off, brightness, temperatures, heating behind an option.",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -10,13 +10,14 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test"
+    "test": "node --test",
+    "audit": "npm audit --omit=dev"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "@gladysassistant/integration-sdk": "^0.16.0"
+    "@gladysassistant/integration-sdk": "^0.15.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -25,5 +26,9 @@
     "globals": "^17.13.0",
     "prettier": "^3.9.9"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LM1LC3N7/gladys-lightwave.git"
+  }
 }
